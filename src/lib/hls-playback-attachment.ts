@@ -1,4 +1,5 @@
 import {
+  consumeSourceSwapPlay,
   createSignedPlaybackRenewal,
   markSourceSwapPlay,
   swapNativePlaybackSource,
@@ -19,6 +20,7 @@ export type HlsPlayer = {
 
 export type HlsErrorData = {
   type?: string;
+  details?: string;
   fatal?: boolean;
   response?: { code?: number };
   networkDetails?: unknown;
@@ -26,8 +28,9 @@ export type HlsErrorData = {
 
 export type HlsConstructor = {
   isSupported: () => boolean;
-  Events: { ERROR: string; FRAG_LOADED?: string };
+  Events: { ERROR: string; FRAG_LOADED?: string; MANIFEST_PARSED?: string };
   ErrorTypes: { NETWORK_ERROR: string };
+  ErrorDetails?: { MANIFEST_LOAD_ERROR?: string; MANIFEST_LOAD_TIMEOUT?: string };
   new (config?: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void }): HlsPlayer;
 };
 
@@ -41,6 +44,8 @@ export type PlaybackVisibility = {
 const NATIVE_HLS_TYPE = "application/vnd.apple.mpegurl";
 const MEDIA_ERR_NETWORK = 2;
 const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
+const MANIFEST_LOAD_ERROR = "manifestLoadError";
+const MANIFEST_LOAD_TIMEOUT = "manifestLoadTimeOut";
 
 /** First automatic retry after a failed hls.js recovery attempt; doubles per attempt. */
 export const HLS_STALL_RETRY_BASE_MS = 2_000;
@@ -97,8 +102,8 @@ const defaultTimers: RenewalTimers = {
 
 type HlsStall = {
   startedAt: number;
-  wasPlaying: boolean;
   authError: boolean;
+  manifestError: boolean;
   autoAttempts: number;
   timer: unknown;
   attempting: boolean;
@@ -120,11 +125,14 @@ type HlsStall = {
  * refused for a while) would otherwise stall until the next scheduled
  * renewal. While stalled, recovery is retried with a jittered backoff
  * (at once, then 2, 4, 8, 16 and every 30 s, at most 20 automatic attempts per
- * stall). After a 401／403 each attempt renews first (still limited by the
- * renewal's own minimum interval) and then calls `startLoad` at the current
- * position. A paused player in a hidden tab waits for the tab to show; a viewer
- * play, the tab showing again or a renewed token retries at once. A loaded
- * fragment ends the stall.
+ * stall). After a 401／403 an attempt first renews (limited by the renewal's
+ * own minimum interval) unless this stall already got a token that still has
+ * more than half its lifetime left. It then calls `startLoad` at the current
+ * position, or `loadSource` when the manifest itself never loaded (`startLoad`
+ * does nothing before hls.js has levels). A paused player in a hidden tab waits
+ * for the tab to show; a viewer play, the tab showing again or a renewed token
+ * retries at once. A loaded fragment ends the stall. Playback is only resumed
+ * when the viewer's last own play／pause was a play.
  */
 export function attachHlsPlayback({
   video,
@@ -162,11 +170,29 @@ export function attachHlsPlayback({
   let lastStallEndedAt = Number.NEGATIVE_INFINITY;
   let lastAttemptAt = Number.NEGATIVE_INFINITY;
   let lastSourceAppliedAt = Number.NEGATIVE_INFINITY;
+  // Until then the applied token still has more than half of its lifetime left.
+  let appliedTokenHalfLifeAt = Number.NEGATIVE_INFINITY;
+  let fetchedLifetimeMs: number | null = null;
+  let manifestParsed = false;
+  let manifestLoadErrors: ReadonlySet<string> = new Set([MANIFEST_LOAD_ERROR, MANIFEST_LOAD_TIMEOUT]);
+  // The viewer's last own play／pause. MSE stalls keep `paused` false, so the element state
+  // alone cannot tell a stall from a pause whose event is still queued.
+  let viewerWantsPlay = !video.paused;
+  let selfPlayPending = false;
+  let selfPauseExpected = false;
+
+  const trackedFetchSource = async () => {
+    const next = await fetchSource();
+    fetchedLifetimeMs = typeof next?.expiresInSeconds === "number" && next.expiresInSeconds > 0
+      ? next.expiresInSeconds * 1_000
+      : null;
+    return next;
+  };
 
   const renewal: SignedPlaybackRenewal | null = expiresInSeconds && expiresInSeconds > 0
     ? createSignedPlaybackRenewal({
       expiresInSeconds,
-      fetchSource,
+      fetchSource: trackedFetchSource,
       timers,
       now,
       applySource: (nextUrl) => {
@@ -174,6 +200,7 @@ export function attachHlsPlayback({
         const changed = nextUrl !== currentUrl;
         currentUrl = nextUrl;
         lastSourceAppliedAt = now();
+        appliedTokenHalfLifeAt = fetchedLifetimeMs === null ? lastSourceAppliedAt : lastSourceAppliedAt + fetchedLifetimeMs / 2;
         if (native) {
           // Native HLS needs a new src; after a media error it reloads even for the same URL.
           if (changed || nativeReloadPending) {
@@ -212,6 +239,16 @@ export function attachHlsPlayback({
     }, hlsStallRetryDelayMs(backoffLevel, random));
   }
 
+  function resumeIfViewerWantsPlay() {
+    if (!viewerWantsPlay || !video.paused) return;
+    selfPlayPending = true;
+    markSourceSwapPlay(video);
+    void video.play()?.catch(() => {
+      selfPlayPending = false;
+      consumeSourceSwapPlay(video);
+    });
+  }
+
   async function attemptRecovery(renew: boolean) {
     const current = stall;
     if (!current || disposed || !player || current.attempting) return;
@@ -222,27 +259,39 @@ export function attachHlsPlayback({
     }
     current.waitingForVisibility = false;
     current.attempting = true;
-    lastAttemptAt = now();
     backoffLevel += 1;
+    const tokenFromThisStall = () => lastSourceAppliedAt >= current.startedAt;
     let usable = true;
-    if (renew && current.authError && renewal) {
-      const renewed = await renewal.renewNow();
-      // A refused or rate-limited renewal still leaves a usable token when one arrived
-      // during this stall; otherwise restarting would only meet the same 401／403.
-      usable = renewed !== null || lastSourceAppliedAt >= current.startedAt;
+    try {
+      if (renew && current.authError && renewal && !(tokenFromThisStall() && now() < appliedTokenHalfLifeAt)) {
+        const renewed = await renewal.renewNow();
+        // A refused or rate-limited renewal still leaves a usable token when one arrived
+        // during this stall; otherwise restarting would only meet the same 401／403.
+        usable = renewed !== null || tokenFromThisStall();
+      }
+    } catch {
+      usable = tokenFromThisStall();
+    } finally {
+      current.attempting = false;
+      // Measured from the end, so a slow renewal does not shorten the gap before a viewer retry.
+      lastAttemptAt = now();
     }
-    current.attempting = false;
     if (disposed || stall !== current || !player) return;
     if (!usable) {
       scheduleAttempt();
       return;
     }
-    // No loadSource(): in hls.js it re-attaches the media and resets the position to 0.
-    player.startLoad(Number.isFinite(video.currentTime) ? video.currentTime : 0);
-    if (current.wasPlaying && video.paused) {
-      markSourceSwapPlay(video);
-      void video.play()?.catch(() => undefined);
+    if (!manifestParsed || current.manifestError) {
+      // Before hls.js has levels startLoad() only flags a later start; the manifest must be
+      // requested again. The element is reset (nothing has played yet), so a pause event
+      // the reset may fire is not the viewer's.
+      if (!video.paused) selfPauseExpected = true;
+      player.loadSource(currentUrl);
+    } else {
+      // No loadSource() here: it re-attaches the media and resets the position to 0.
+      player.startLoad(Number.isFinite(video.currentTime) ? video.currentTime : 0);
     }
+    resumeIfViewerWantsPlay();
   }
 
   const onHlsError = (data: HlsErrorData, networkErrorType: string) => {
@@ -251,13 +300,14 @@ export function attachHlsPlayback({
     const authError = status === 401 || status === 403;
     // hls.js retries other non-fatal network errors itself.
     if (!authError && data.fatal !== true) return;
+    const manifestError = typeof data.details === "string" && manifestLoadErrors.has(data.details);
     if (!stall) {
       const at = now();
       if (at - lastStallEndedAt >= HLS_STALL_BACKOFF_RESET_MS) backoffLevel = 0;
       stall = {
         startedAt: at,
-        wasPlaying: !video.paused,
         authError,
+        manifestError,
         autoAttempts: 0,
         timer: null,
         attempting: false,
@@ -267,14 +317,21 @@ export function attachHlsPlayback({
         void attemptRecovery(true);
         return;
       }
-    } else if (authError) {
-      stall.authError = true;
+    } else {
+      if (authError) stall.authError = true;
+      if (manifestError) stall.manifestError = true;
     }
     // The previous attempt failed (errors during an attempt or with a retry pending are absorbed).
     scheduleAttempt();
   };
 
+  const onManifestParsed = () => {
+    manifestParsed = true;
+    if (stall) stall.manifestError = false;
+  };
+
   const onFragLoaded = () => {
+    selfPauseExpected = false;
     if (!stall) return;
     clearStallTimer();
     stall = null;
@@ -285,7 +342,7 @@ export function attachHlsPlayback({
     const current = stall;
     if (!current || current.attempting || disposed) return;
     if (now() - lastAttemptAt < HLS_STALL_MANUAL_MIN_GAP_MS) {
-      // Too soon (this is also our own play() right after an attempt): keep the backoff.
+      // Too soon: keep the backoff running.
       if (current.waitingForVisibility) scheduleAttempt();
       return;
     }
@@ -294,16 +351,25 @@ export function attachHlsPlayback({
   };
 
   const onPlay = () => {
-    if (!stall) return;
-    stall.wasPlaying = true;
+    if (selfPlayPending) {
+      // Our own resume after an attempt: neither a viewer intent nor a reason to retry.
+      selfPlayPending = false;
+      return;
+    }
+    viewerWantsPlay = true;
     retryOnViewerAction();
   };
   const onPause = () => {
+    if (selfPauseExpected) {
+      selfPauseExpected = false;
+      return;
+    }
     // A viewer pause during a stall must not be undone by a later attempt.
-    if (stall) stall.wasPlaying = false;
+    viewerWantsPlay = false;
   };
   const onVisibilityChange = () => {
-    if (!visibility?.hidden && stall?.waitingForVisibility) retryOnViewerAction();
+    // Also after the automatic attempts are used up: showing the tab retries a live stall.
+    if (!visibility?.hidden && stall) retryOnViewerAction();
   };
 
   const onNativeError = () => {
@@ -337,7 +403,14 @@ export function attachHlsPlayback({
       } : undefined);
       player = hls;
       if (renewal) {
+        manifestLoadErrors = new Set([
+          Hls.ErrorDetails?.MANIFEST_LOAD_ERROR ?? MANIFEST_LOAD_ERROR,
+          Hls.ErrorDetails?.MANIFEST_LOAD_TIMEOUT ?? MANIFEST_LOAD_TIMEOUT,
+        ]);
+        // Without the event the manifest state is unknown; rely on the error details alone.
+        manifestParsed = !Hls.Events.MANIFEST_PARSED;
         hls.on(Hls.Events.ERROR, (_event, data) => onHlsError(data, Hls.ErrorTypes.NETWORK_ERROR));
+        if (Hls.Events.MANIFEST_PARSED) hls.on(Hls.Events.MANIFEST_PARSED, onManifestParsed);
         if (Hls.Events.FRAG_LOADED) hls.on(Hls.Events.FRAG_LOADED, onFragLoaded);
         video.addEventListener("play", onPlay);
         video.addEventListener("pause", onPause);
