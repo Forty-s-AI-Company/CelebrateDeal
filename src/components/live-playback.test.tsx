@@ -82,7 +82,7 @@ import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { LiveChatPanel } from "./live-chat-panel";
 import { LivePurchaseBroadcastPanel } from "./live-purchase-broadcast-panel";
 import { LiveViewerPrivateChat } from "./live-viewer-private-chat";
-import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, PlaybackToggleButton, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useHlsPlayback, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
+import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, PlaybackToggleButton, playbackMediaProps, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useHlsPlayback, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
 
 /** Hook-free components the shallow harness renders inline. */
 const RENDERED_COMPONENT_NAMES = [
@@ -405,6 +405,17 @@ describe("LivePlayback checkout", () => {
     expect(isHlsPlaybackUrl("http://videodelivery.net/video-1/manifest/video.m3u8")).toBe(false);
     expect(isHlsPlaybackUrl("https://videodelivery.net/video-1/watch")).toBe(false);
     expect(isHlsPlaybackUrl("not-a-url")).toBe(false);
+  });
+
+  it("never renders an HLS manifest as the native src, but keeps mp4 and non-HLS sources", () => {
+    const hls = "https://videodelivery.net/aaa.bbb.ccc/manifest/video.m3u8";
+    const renewed = "https://videodelivery.net/ddd.eee.fff/manifest/video.m3u8";
+    const mp4 = "https://video.example.test/recording.mp4";
+    expect(playbackMediaProps({ playbackUrl: hls, playbackStartSeconds: 0 }, hls, false).src).toBeUndefined();
+    expect(playbackMediaProps({ playbackUrl: renewed, playbackStartSeconds: 0 }, renewed, true).src).toBeUndefined();
+    expect(playbackMediaProps({ playbackUrl: mp4, playbackStartSeconds: 0 }, mp4, false).src).toBe(mp4);
+    expect(playbackMediaProps(null, null, false).src).toBeUndefined();
+    expect(playbackMediaProps({ playbackUrl: hls, playbackStartSeconds: 0, protocol: "whep" } as never, hls, false).src).toBeUndefined();
   });
 
   it("does not expose a playable source before server admission", () => {
@@ -799,7 +810,8 @@ describe("LivePlayback checkout", () => {
     const secondVideo = findElements(tree, (element) => element.type === "video")[0];
     if (!secondVideo) throw new Error("Expected replacement HLS video element");
     expect(secondVideo.props.ref).toBe(videoRef);
-    expect(secondVideo.props.src).toBe("https://video.example.test/hls-b/manifest/video.m3u8");
+    // hls.js owns the manifest: the renewed URL must never be rendered as a native src.
+    expect(secondVideo.props.src).toBeUndefined();
     expect(currentTarget.currentTime).toBe(77);
 
     const secondLoadedMetadata = secondVideo.props.onLoadedMetadata as (event: { currentTarget: HTMLVideoElement }) => void;

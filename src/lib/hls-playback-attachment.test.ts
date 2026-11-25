@@ -149,6 +149,45 @@ describe("attachHlsPlayback", () => {
     expect(instances[0]!.loadSource).toHaveBeenCalledTimes(1);
   });
 
+  it("never assigns the manifest to the element's native src on the hls.js path, through renewal and recovery", async () => {
+    const video = fakeVideo({ nativeHls: true });
+    const assigned: unknown[] = [];
+    let current = "";
+    Object.defineProperty(video, "src", {
+      get: () => current,
+      set: (value: string) => { assigned.push(value); current = value; },
+    });
+    const { Hls, instances } = fakeHls(true);
+    const fetchSource = vi.fn().mockResolvedValue({ playbackUrl: renewedUrl, expiresInSeconds: 600 });
+    const cleanup = attachHlsPlayback({ video: video as never, url: firstUrl, expiresInSeconds: 600, fetchSource, loadHls: async () => Hls });
+    await settle();
+    await vi.advanceTimersByTimeAsync(8 * 60_000);
+    instances[0]!.emit({ type: "networkError", response: { code: 403 } });
+    await settle();
+    cleanup();
+
+    expect(instances[0]!.attachMedia).toHaveBeenCalledWith(video);
+    expect(assigned).toEqual([]);
+  });
+
+  it("sets the native src only on the native HLS path, again after a renewal", async () => {
+    const video = fakeVideo({ nativeHls: true });
+    const assigned: string[] = [];
+    let current = "";
+    Object.defineProperty(video, "src", {
+      get: () => current,
+      set: (value: string) => { assigned.push(value); current = value; },
+    });
+    const { Hls } = fakeHls(false);
+    const fetchSource = vi.fn().mockResolvedValue({ playbackUrl: renewedUrl, expiresInSeconds: 600 });
+    const cleanup = attachHlsPlayback({ video: video as never, url: firstUrl, expiresInSeconds: 600, fetchSource, loadHls: async () => Hls });
+    await settle();
+    expect(assigned).toEqual([firstUrl]);
+    await vi.advanceTimersByTimeAsync(8 * 60_000);
+    expect(assigned[0]).toBe(firstUrl);
+    cleanup();
+  });
+
   it.each([401, 403])("renews at once and only restarts loading at the stopped position after an hls.js %i error", async (code) => {
     const video = fakeVideo({ currentTime: 321 });
     const { Hls, instances } = fakeHls(true);
