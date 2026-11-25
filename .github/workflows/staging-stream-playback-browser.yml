@@ -1,0 +1,167 @@
+name: Staging Stream signed playback browser
+
+# F-093 plan §8 step 3 (docs/operations/stream-signed-urls-plan.md) on the fixed staging alias,
+# synthetic data only: token-form replay through the public entry + admission, replay token exp
+# vs the replay deadline, token-failure recovery (page.route 403s), the allowedOrigins probe, the
+# pages that show Stream videos/thumbnails, and (scenario full, ~40 min of playback) playing
+# through the first replay renewal. Owner fixtures live under the WP4 synthetic vendor; the
+# 55-minute video is uploaded once and reused. It never starts a checkout, payment, refund,
+# form submission or email.
+#
+# The WebKit job is Playwright WebKit on macOS: evidence for that engine only. Safari is always
+# reported NOT_COVERED (Playwright WebKit is not Safari, and the app prefers hls.js wherever
+# MediaSource works) and needs a manual check on a real Safari / iPhone.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact source commit of the immutable Preview deployment
+        required: true
+        type: string
+      deployment_host:
+        description: Immutable Preview host recorded by the protected GitHub deployment
+        required: true
+        type: string
+      scenario:
+        description: full plays through the first renewal (~28 min); quick skips the renewal
+        required: true
+        default: full
+        type: choice
+        options:
+          - full
+          - quick
+      webkit:
+        description: Also run the Playwright WebKit evidence job on macOS (quick scenario)
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  deployments: read
+
+concurrency:
+  group: staging-stream-playback-browser
+  cancel-in-progress: false
+
+jobs:
+  chromium:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    environment: Preview – celebrate-deal-staging
+    env:
+      CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+      CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+      CELEBRATEDEAL_STREAM_VIEWER_BROWSER: chromium
+      CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: ${{ inputs.scenario }}
+    steps:
+      - name: Checkout protected Stream playback runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # Google Chrome, not Playwright's bundled Chromium: Stream serves H.264, which the bundled
+      # build cannot decode. ubuntu-latest ships Chrome; install it only when it is missing.
+      - name: Install locked dependencies and Google Chrome before secret injection
+        run: |
+          npm ci --ignore-scripts
+          google-chrome --version || npx playwright install --with-deps chrome
+
+      - name: Test fixed Stream playback contract before secret injection
+        run: node --test scripts/staging-stream-playback-browser.test.mjs
+
+      - name: Verify exact Preview lineage before secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+
+      - name: Verify fixed staging alias before owner secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/staging-browser-smoke.mjs --verify-alias
+
+      # The owner session is the short-lived WP4 synthetic owner, revoked before the viewer phase.
+      - name: Verify signed playback in Chrome (hls.js)
+        timeout-minutes: 95
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/staging-stream-playback-browser.mjs
+
+      - name: Upload sanitized Chrome playback receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: celebratedeal-staging-stream-playback-chromium
+          path: ${{ runner.temp }}/celebratedeal-staging-stream-playback-chromium.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  webkit:
+    needs: chromium
+    if: ${{ always() && inputs.webkit && needs.chromium.result != 'skipped' && github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    environment: Preview – celebrate-deal-staging
+    env:
+      CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+      CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+      CELEBRATEDEAL_STREAM_VIEWER_BROWSER: webkit
+      CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: quick
+    steps:
+      - name: Checkout protected Stream playback runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # WebKit is the viewer; the owner fixture steps use the bundled Chromium.
+      - name: Install locked dependencies, WebKit and Chromium before secret injection
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install webkit chromium
+
+      - name: Test fixed Stream playback contract before secret injection
+        run: node --test scripts/staging-stream-playback-browser.test.mjs
+
+      - name: Verify exact Preview lineage before secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+
+      - name: Verify fixed staging alias before owner secret injection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/staging-browser-smoke.mjs --verify-alias
+
+      - name: Collect Playwright WebKit playback evidence (not Safari)
+        timeout-minutes: 40
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/staging-stream-playback-browser.mjs
+
+      - name: Upload sanitized WebKit playback receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: celebratedeal-staging-stream-playback-webkit
+          path: ${{ runner.temp }}/celebratedeal-staging-stream-playback-webkit.json
+          if-no-files-found: ignore
+          retention-days: 14
