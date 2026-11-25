@@ -10,7 +10,7 @@ import {
   classifyRequest, classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims,
   finalVerdict, formatReceiptLines, isStreamDeliveryHost, receiptLeaks, renewalDelaySeconds,
   replayDeadline, replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor,
-  PAGE_ERROR_DETAIL_LIMIT, classifyRequestFailure, describePageError, isBenignPageError,
+  PAGE_ERROR_DETAIL_LIMIT, classifyRequestFailure, classifyVideoLock, postLockCoverage, describePageError, isBenignPageError, streamTokenSubject,
   streamRequestOrigin, tallyStreamRequest, taipeiDateTimeLocal, validUploadUrl, withCorruptedSignature,
 } from "./staging-stream-playback-browser-core.mjs";
 
@@ -306,15 +306,19 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
     await context.routeWebSocket("**/*", (socket) => socket.close());
     return context;
   };
+  // Set while the runner itself reloads the viewer page (and 2 s after the new document loaded):
+  // loads the old document still had in flight are cancelled by that navigation.
+  const navigation = { active: false, settledUntil: 0 };
   const newPage = async (context, actor) => {
     const page = await context.newPage();
     page.on("pageerror", (error) => {
-      // Redacted fields only (describePageError); a narrowly benign interrupted play() is counted apart.
-      const described = describePageError(error);
+      // Redacted fields only (describePageError); narrowly benign reports are counted apart.
+      const duringNavigation = navigation.active || Date.now() <= navigation.settledUntil;
+      const described = describePageError(error, { viewerBrowser, actor, duringNavigation });
       const benign = isBenignPageError(described);
       if (benign) receipt.benignPageErrors += 1; else receipt.pageErrors += 1;
       if (receipt.pageErrorDetails.length < PAGE_ERROR_DETAIL_LIMIT) {
-        receipt.pageErrorDetails.push({ actor, phase: STEPS.includes(currentStep) ? currentStep : "OTHER", benign, ...described });
+        receipt.pageErrorDetails.push({ actor, phase: STEPS.includes(currentStep) ? currentStep : "OTHER", duringNavigation, benign, ...described });
       }
     });
     page.on("dialog", (dialog) => { void dialog.dismiss().catch(() => {}); });
@@ -650,7 +654,14 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
     /** Opens the public replay as a fresh visitor and waits until it is really playing. */
     const startViewer = async () => {
       const sourcesBefore = tracker.state.sources.length;
-      const response = await viewer.goto(`${ORIGIN}/live/${fixture.liveSlug}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      navigation.active = true;
+      let response;
+      try {
+        response = await viewer.goto(`${ORIGIN}/live/${fixture.liveSlug}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      } finally {
+        navigation.active = false;
+        navigation.settledUntil = Date.now() + 2_000;
+      }
       ensure(response?.status() === 200, "LIVE_PAGE_STATUS");
       ensure(await visible(viewer.locator(PLAYER_VIDEO), 30_000), "PLAYER_NOT_RENDERED");
       for (let tries = 0; tries < 120 && tracker.state.sources.length === sourcesBefore; tries += 1) await wait(250);
@@ -750,6 +761,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
   } else {
     Object.assign(receipt.coverage, safariCoverage(receipt.capabilities));
   }
+  Object.assign(receipt.coverage, postLockCoverage(receipt));
   return receipt;
 }
 
@@ -888,7 +900,10 @@ async function runPageChecks({ owner, anonymous, newPage, receipt, fixture, wait
  * (control), no Origin, a foreign Origin, and a broken signature. Status codes only.
  */
 export async function probeAllowedOrigins(playbackUrl, fetchImpl = fetch) {
-  const result = { status: "FAIL", appOrigin: null, noOrigin: null, foreignOrigin: null, invalidToken: null, invalidTokenCorsReadable: null, appManifest: false };
+  const result = {
+    status: "FAIL", appOrigin: null, noOrigin: null, foreignOrigin: null, invalidToken: null, invalidTokenCorsReadable: null,
+    appManifest: false, unsignedUidManifest: null, videoLock: "UNKNOWN",
+  };
   if (!playbackUrl || classifyStreamUrl(playbackUrl)?.form !== "TOKEN") return { ...result, reason: "NO_SIGNED_URL" };
   const probe = async (url, headers, readBody = false) => {
     try {
@@ -910,6 +925,12 @@ export async function probeAllowedOrigins(playbackUrl, fetchImpl = fetch) {
     result.invalidToken = invalid.status;
     result.invalidTokenCorsReadable = invalid.corsReadable;
   }
+  // Lock state of this video at run time: Cloudflare's answer to the unsigned uid manifest
+  // (the uid comes from the token's sub, in memory only). UNLOCKED means everything this run
+  // proved about renewal and Cloudflare-signed segments predates requireSignedURLs.
+  const uid = streamTokenSubject(classifyStreamUrl(playbackUrl).token);
+  result.unsignedUidManifest = uid ? (await probe(`https://videodelivery.net/${uid}/manifest/video.m3u8`, { Origin: ORIGIN })).status : null;
+  result.videoLock = classifyVideoLock(result.unsignedUidManifest);
   // Only the app Origin must play; the others are recorded for the lock decision (plan §8 step 4).
   result.status = result.appOrigin === 200 && result.appManifest ? "PASS" : "FAIL";
   return result;
@@ -1062,18 +1083,24 @@ async function runRenewal({ tracker, sample, startViewer, wait, receipt, deadlin
     result.renewedExpEqualsDeadline = exp?.expEqualsDeadline ?? false;
     result.renewedExpDeltaSeconds = exp?.deltaSeconds ?? null;
     const renewedIndex = renewed.tokenIndex;
+    // Recorded, not required: over hls.js a VOD loads its playlists once and Cloudflare signs the
+    // uid-form segment URIs itself (`p`/`s` query), so after a renewal no request needs to carry
+    // the new token (run 45561006960: 0, while playback ran 175 s past the first token's exp).
     result.newTokenStreamRequests = tracker.state.stream.filter((entry) => entry.token === renewedIndex && entry.status >= 200 && entry.status < 300).length;
     const afterRenewal = samples.filter((entry) => entry.atMs >= renewed.atMs);
     result.advancedAfterRenewalSeconds = afterRenewal.length >= 2 ? round1(afterRenewal.at(-1).currentTime - afterRenewal[0].currentTime) : 0;
     if (result.observedAfterSeconds > expected + 180) result.reasons.push("RENEWAL_LATE");
     if (!result.renewedExpMatchesExpected) result.reasons.push("RENEWED_EXP_MISMATCH");
     if (!result.renewedExpEqualsDeadline) result.reasons.push("RENEWED_EXP_NOT_DEADLINE");
-    if (result.newTokenStreamRequests < 1) result.reasons.push("NEW_TOKEN_NOT_USED");
     if (!(result.advancedAfterRenewalSeconds >= 60)) result.reasons.push("NOT_PLAYING_AFTER_RENEWAL");
+    // The property that matters: uninterrupted playback well past the first token's exp.
     const pastExp = pastExpTarget === null ? [] : samples.filter((entry) => entry.atMs >= initialExpMs);
     result.advancedPastInitialExpSeconds = pastExp.length >= 2 ? round1(pastExp.at(-1).currentTime - pastExp[0].currentTime) : 0;
-    if (pastExpObservable && !(result.advancedPastInitialExpSeconds >= 120)) result.reasons.push("NOT_PLAYING_PAST_FIRST_TOKEN_EXP");
+    if (!pastExpObservable) result.reasons.push("FIRST_TOKEN_EXP_NOT_OBSERVABLE_BEFORE_DEADLINE");
+    else if (!(result.advancedPastInitialExpSeconds >= 120)) result.reasons.push("NOT_PLAYING_PAST_FIRST_TOKEN_EXP");
   }
+  // UNLOCKED: this was observed before requireSignedURLs, so post-lock behaviour is unproven.
+  result.videoLockAtRun = receipt.origin?.videoLock ?? "UNKNOWN";
   result.streamErrors = tracker.streamErrorsSince(source.atMs);
   if (!progress.ok) result.reasons.push("PLAYBACK_INTERRUPTED");
   if (result.streamErrors > 0) result.reasons.push("STREAM_ERRORS");
