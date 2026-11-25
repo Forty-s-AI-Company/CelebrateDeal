@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
-  ALIAS, FIXTURE, ORIGIN, STEPS,
-  assessPlaybackProgress, assessRecovery, assessReplayTokenExp, classifyPlayerPath, classifyRequest,
+  ALIAS, FIXTURE, ORIGIN, STEPS, STREAM_PATTERN_LIMIT,
+  assessPlaybackProgress, redactStreamPath, streamRequestOrigin, tallyStreamRequest, assessRecovery, assessReplayTokenExp, classifyPlayerPath, classifyRequest,
   classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims, finalVerdict,
   formatReceiptLines, receiptLeaks, redactStreamUrl, renewalDelaySeconds, replayDeadline,
   replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor, taipeiDateTimeLocal,
@@ -40,6 +40,63 @@ test("Stream URLs are classified by form and kind; the token stays out of redact
   const redacted = redactStreamUrl(signedManifest);
   assert.equal(redacted, "https://customer-<code>.cloudflarestream.com/<token>/manifest/video.m3u8");
   assert.equal(redacted.includes(manifest.token), false);
+});
+
+test("request shapes are redacted: no token, uid, long id or query value survives", () => {
+  const tokenValue = classifyStreamUrl(signedManifest).token;
+  const cases = [
+    [signedManifest, "customer:/<token>/manifest/video.m3u8"],
+    [`https://videodelivery.net/${uid}/video/240/seg_12.ts?p=abc&s=def`, "videodelivery:/<uid>/video/<n>/seg_<n>.ts?keys=p,s"],
+    [`${customer}/${tokenValue}/manifest/stream_t0a1b2c3d4e5f6a7b8c9d0.m3u8?CMCD=1`, "customer:/<token>/manifest/<long>.m3u8?keys=CMCD"],
+    [`${customer}/${uid}/thumbnails/thumbnail.jpg?time=1s&height=270`, "customer:/<uid>/thumbnails/thumbnail.jpg?keys=height,time"],
+    ["https://example.com/a", "<non-stream>"],
+    ["nope", "<invalid>"],
+  ];
+  for (const [url, expected] of cases) {
+    const redacted = redactStreamPath(url);
+    assert.equal(redacted, expected, url);
+    assert.equal(receiptLeaks(JSON.stringify({ redacted })), false, url);
+  }
+  assert.equal(redactStreamPath(`https://videodelivery.net/${uid}/x?${"k".repeat(30)}=1`), "videodelivery:/<uid>/x?keys=<key>");
+});
+
+test("only app-chosen Stream URLs must be signed; player loads of playlist URIs are provider-chosen", () => {
+  const parse = (path) => classifyStreamUrl(`https://videodelivery.net/${uid}/${path}`);
+  // The entry manifest is the URL the app hands out: a uid form is an app finding whatever loads it.
+  for (const type of ["xhr", "fetch", "media", "document", "other"]) assert.equal(streamRequestOrigin(parse("manifest/video.m3u8"), type), "APP", type);
+  for (const path of ["video/240/seg_1.ts", "manifest/stream_t1.m3u8", "video/240/init.mp4"]) {
+    for (const type of ["xhr", "fetch", "media"]) assert.equal(streamRequestOrigin(parse(path), type), "PROVIDER", `${path} ${type}`);
+    // Anything else (an <img>, a <script>, a document or iframe) was placed by the page itself.
+    for (const type of ["image", "script", "document", "other"]) assert.equal(streamRequestOrigin(parse(path), type), "APP", `${path} ${type}`);
+  }
+  assert.equal(streamRequestOrigin(parse("thumbnails/thumbnail.jpg"), "image"), "APP");
+  assert.equal(streamRequestOrigin(null, "xhr"), null);
+});
+
+test("stream request tally is bounded, keeps counts per shape and phase, and skips thumbnails", () => {
+  const list = [];
+  const seg = (n) => `https://videodelivery.net/${uid}/video/240/seg_${n}.ts`;
+  tallyStreamRequest(list, { phase: "VIEWER_START", url: seg(1), resourceType: "xhr" }, "request");
+  tallyStreamRequest(list, { phase: "VIEWER_START", url: seg(2), resourceType: "xhr" }, "request");
+  tallyStreamRequest(list, { phase: "VIEWER_START", url: seg(2), resourceType: "xhr" }, "ok");
+  tallyStreamRequest(list, { phase: "RENEWAL", url: seg(3), resourceType: "xhr" }, "failed");
+  assert.equal(tallyStreamRequest(list, { phase: "VIEWER_START", url: `https://videodelivery.net/${uid}/thumbnails/thumbnail.jpg`, resourceType: "image" }, "request"), null);
+  assert.deepEqual(list, [
+    { phase: "VIEWER_START", origin: "PROVIDER", form: "UID", kind: "SEGMENT", resourceType: "xhr", pattern: "videodelivery:/<uid>/video/<n>/seg_<n>.ts", requests: 2, ok: 1, failed: 0 },
+    { phase: "RENEWAL", origin: "PROVIDER", form: "UID", kind: "SEGMENT", resourceType: "xhr", pattern: "videodelivery:/<uid>/video/<n>/seg_<n>.ts", requests: 0, ok: 0, failed: 1 },
+  ]);
+  const crowded = [];
+  for (let index = 0; index < STREAM_PATTERN_LIMIT + 10; index += 1) {
+    const dir = `dir${String.fromCharCode(97 + (index % 26))}${String.fromCharCode(97 + Math.floor(index / 26))}`;
+    tallyStreamRequest(crowded, { phase: "VIEWER_START", url: `https://videodelivery.net/${uid}/${dir}/seg.ts`, resourceType: "xhr" }, "request");
+  }
+  assert.equal(crowded.length, STREAM_PATTERN_LIMIT);
+  assert.equal(crowded.at(-1).pattern, "OVERFLOW");
+  assert.equal(crowded.at(-1).requests, 11);
+  assert.equal(crowded.reduce((sum, item) => sum + item.requests, 0), STREAM_PATTERN_LIMIT + 10);
+  // An unknown phase or resource type is normalised and still counted.
+  tallyStreamRequest(crowded, { phase: "weird phase", url: seg(1), resourceType: "beacon" }, "request");
+  assert.equal(crowded.at(-1).requests, 12);
 });
 
 test("token claims are decoded from the payload only and broken tokens are rejected", () => {
@@ -230,8 +287,11 @@ test("receipt lines are single-line key=value records with fixed vocabulary", ()
   const receipt = createReceipt(env);
   receipt.recovery.push({ mode: "token_expiry", state: "playing", status: "FAIL", reasons: ["NOT_RESUMED", "NOT_ADVANCING"] });
   receipt.origin = { status: "PASS", appOrigin: 200, noOrigin: 200, foreignOrigin: 403, invalidToken: 401, invalidTokenCorsReadable: false };
+  tallyStreamRequest(receipt.viewer.streamRequestPatterns, { phase: "VIEWER_START", url: `https://videodelivery.net/${uid}/video/240/seg_12.ts?p=secret`, resourceType: "xhr" }, "request");
   const lines = formatReceiptLines(receipt).split("\n");
-  assert.equal(lines.length, 8);
+  assert.equal(lines.length, 9);
+  assert.ok(lines.some((line) => line.startsWith("stream_playback_requests=app_uid:0 provider_uid:0 provider_failures:0 VIEWER_START/PROVIDER/UID/SEGMENT/xhr:videodelivery:/<uid>/video/<n>/seg_<n>.ts?keys=p=1(ok:0,failed:0)")));
+  assert.equal(receiptLeaks(lines.join("\n")), false);
   for (const line of lines) assert.match(line, /^stream_playback_[a-z]+=\S/u);
   assert.ok(lines.some((line) => line.includes("token_expiry/playing:FAIL(NOT_RESUMED+NOT_ADVANCING)")));
   assert.ok(lines.some((line) => line === "stream_playback_origin=status:PASS app:200 none:200 foreign:403 invalid_token:401 invalid_token_cors_readable:false"));

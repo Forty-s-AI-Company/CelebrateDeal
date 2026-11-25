@@ -10,7 +10,7 @@ import {
   classifyRequest, classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims,
   finalVerdict, formatReceiptLines, isStreamDeliveryHost, receiptLeaks, renewalDelaySeconds,
   replayDeadline, replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor,
-  taipeiDateTimeLocal, validUploadUrl, withCorruptedSignature,
+  streamRequestOrigin, tallyStreamRequest, taipeiDateTimeLocal, validUploadUrl, withCorruptedSignature,
 } from "./staging-stream-playback-browser-core.mjs";
 
 /**
@@ -94,10 +94,10 @@ function readVideoState(selector) {
 }
 
 /** Network and playback-source observations for one viewer page; tokens stay in memory. */
-function createViewerTracker(page, receipt) {
+function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
   const state = {
     sources: [], admissionOk: 0, admissionFailed: 0, tokens: [],
-    stream: [], uidForm: 0, tokenForm: 0,
+    stream: [], uidForm: 0, appUidForm: 0, tokenForm: 0,
   };
   const tokenIndex = (token) => {
     if (!token) return -1;
@@ -105,18 +105,38 @@ function createViewerTracker(page, receipt) {
     if (index === -1) { state.tokens.push(token); index = state.tokens.length - 1; }
     return index;
   };
+  const tally = (request, outcome) => {
+    let resourceType = "other";
+    try { resourceType = request.resourceType(); } catch { /* fixed fallback */ }
+    return tallyStreamRequest(receipt.viewer.streamRequestPatterns, { phase: phaseOf(), url: request.url(), resourceType }, outcome);
+  };
+  /** Provider failures during RECOVERY are the 403s the runner itself injects. */
+  const countProviderFailure = (entry) => {
+    if (entry?.origin === "PROVIDER" && phaseOf() !== "RECOVERY") receipt.viewer.providerRequestFailures += 1;
+  };
   page.on("request", (request) => {
-    const parsed = classifyStreamUrl(request.url());
-    if (!parsed || parsed.kind === "THUMBNAIL") return;
-    if (parsed.form === "UID") { state.uidForm += 1; receipt.viewer.uidFormStreamRequests += 1; }
-    if (parsed.form === "TOKEN") { state.tokenForm += 1; receipt.viewer.tokenFormStreamRequests += 1; }
+    const entry = tally(request, "request");
+    if (!entry) return;
+    if (entry.form === "UID") {
+      state.uidForm += 1;
+      receipt.viewer.uidFormStreamRequests += 1;
+      if (entry.origin === "APP") { state.appUidForm += 1; receipt.viewer.appUidFormStreamRequests += 1; }
+      else receipt.viewer.providerUidFormStreamRequests += 1;
+    }
+    if (entry.form === "TOKEN") { state.tokenForm += 1; receipt.viewer.tokenFormStreamRequests += 1; }
   });
+  page.on("requestfailed", (request) => countProviderFailure(tally(request, "failed")));
   page.on("response", (response) => {
     let url;
     try { url = new URL(response.url()); } catch { return; }
     const parsed = classifyStreamUrl(response.url());
     if (parsed && parsed.kind !== "THUMBNAIL") {
-      state.stream.push({ atMs: Date.now(), status: response.status(), token: tokenIndex(parsed.token), kind: parsed.kind });
+      const entry = tally(response.request(), response.status() < 400 ? "ok" : "failed");
+      if (response.status() >= 400) countProviderFailure(entry);
+      state.stream.push({
+        atMs: Date.now(), status: response.status(), token: tokenIndex(parsed.token), kind: parsed.kind,
+        form: parsed.form, origin: entry?.origin ?? "APP",
+      });
       return;
     }
     if (url.origin !== ORIGIN) return;
@@ -404,19 +424,73 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
       receipt.fixture.videoReadyWaitSeconds = Math.round((now() - uploadedAt) / 1_000);
     });
 
-    await step("FIXTURE_FORM", async () => {
-      await ensureOwnerSession();
-      await owner.goto(`${ORIGIN}/forms`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      if (await visible(owner.getByText(FIXTURE.formName, { exact: true }), 8_000)) { receipt.fixture.formReused = true; return; }
+    /** Anonymous GET of the public registration page (no cookies): 200 means it is public. */
+    const formIsPublic = async () => {
+      try {
+        const response = await fetchImpl(`${ORIGIN}/form/${FIXTURE.formSlug}`, { redirect: "manual", signal: AbortSignal.timeout(20_000) });
+        await response.body?.cancel();
+        return response.status === 200;
+      } catch { return false; }
+    };
+    const FORM_BUILDER_PROJECT = 'form:has(select[name="promoVideoId"]) input[name="projectId"]';
+    const SWITCHER_BUTTON = '[data-workspace-switcher] button[aria-haspopup="menu"]';
+    const openFormBuilder = async () => {
       await owner.goto(`${ORIGIN}/forms/new`, { waitUntil: "domcontentloaded", timeout: 30_000 });
       await owner.waitForFunction(elementHydratedInPage, 'select[name="promoVideoId"]', { timeout: HYDRATION_TIMEOUT_MS });
-      await owner.locator('input[name="name"]').fill(FIXTURE.formName);
-      await owner.locator('input[name="slug"]').fill(FIXTURE.formSlug);
-      await owner.locator('input[name="headline"]').fill(FIXTURE.formHeadline);
-      ensure(await selectOptionByText(owner.locator('select[name="promoVideoId"]'), FIXTURE.videoTitle), "PROMO_VIDEO_OPTION");
-      await owner.getByRole("button", { name: "儲存表單", exact: true }).click({ timeout: 10_000 });
-      await owner.waitForURL((url) => url.pathname === "/forms", { timeout: 30_000 });
-      receipt.sideEffects.formCreates += 1;
+    };
+    /** The sidebar project switcher, as a merchant uses it; `target` null is 全部專案總覽. */
+    const switchProjectScope = async (target) => {
+      await owner.waitForFunction(elementHydratedInPage, SWITCHER_BUTTON, { timeout: HYDRATION_TIMEOUT_MS });
+      const button = owner.locator("[data-workspace-switcher]").filter({ visible: true }).first().locator('button[aria-haspopup="menu"]');
+      await button.click({ timeout: 10_000 });
+      const item = target === null
+        ? owner.getByRole("menuitemradio", { name: /^全部專案總覽/u })
+        : owner.getByRole("menuitemradio", { name: target, exact: true });
+      await item.first().click({ timeout: 10_000 });
+      const wanted = target ?? "全部專案總覽";
+      for (let tries = 0; tries < 60; tries += 1) {
+        if (await button.isEnabled() && ((await button.textContent()) ?? "").trim() === wanted) return true;
+        await wait(250);
+      }
+      return false;
+    };
+    await step("FIXTURE_FORM", async () => {
+      await ensureOwnerSession();
+      if (await formIsPublic()) { receipt.fixture.formReused = true; receipt.fixture.formPublic = true; return; }
+      await openFormBuilder();
+      // A new form joins the merchant's selected sales project, and a project form is public only
+      // once that project is published (src/lib/public-registration-form.ts). In 全部專案總覽 a new
+      // form stays unattached and is public at once, so create it there and switch back after.
+      let previousScope = null;
+      if (await owner.locator(FORM_BUILDER_PROJECT).count() > 0) {
+        await owner.waitForFunction(elementHydratedInPage, SWITCHER_BUTTON, { timeout: HYDRATION_TIMEOUT_MS });
+        previousScope = ((await owner.locator("[data-workspace-switcher]").filter({ visible: true }).first()
+          .locator('button[aria-haspopup="menu"]').textContent()) ?? "").trim();
+        ensure(previousScope.length > 0 && previousScope !== "全部專案總覽", "PROJECT_SCOPE_UNKNOWN");
+        ensure(await switchProjectScope(null), "SCOPE_SWITCH_FAILED");
+        receipt.fixture.formScopeSwitched = true;
+        await openFormBuilder();
+        ensure(await owner.locator(FORM_BUILDER_PROJECT).count() === 0, "FORM_STILL_PROJECT_BOUND");
+      }
+      try {
+        await owner.locator('input[name="name"]').fill(FIXTURE.formName);
+        await owner.locator('input[name="slug"]').fill(FIXTURE.formSlug);
+        await owner.locator('input[name="headline"]').fill(FIXTURE.formHeadline);
+        ensure(await selectOptionByText(owner.locator('select[name="promoVideoId"]'), FIXTURE.videoTitle), "PROMO_VIDEO_OPTION");
+        await owner.getByRole("button", { name: "儲存表單", exact: true }).click({ timeout: 10_000 });
+        await owner.waitForURL((url) => url.pathname === "/forms", { timeout: 30_000 });
+        receipt.sideEffects.formCreates += 1;
+      } finally {
+        if (previousScope) {
+          // Restore the synthetic owner's previous project scope for the other staging runners.
+          receipt.fixture.formScopeRestored = false;
+          await openFormBuilder().catch(() => {});
+          receipt.fixture.formScopeRestored = await switchProjectScope(previousScope).catch(() => false);
+        }
+      }
+      ensure(receipt.fixture.formScopeRestored !== false, "SCOPE_NOT_RESTORED");
+      receipt.fixture.formPublic = await formIsPublic();
+      ensure(receipt.fixture.formPublic, "FORM_NOT_PUBLIC");
     });
 
     await step("FIXTURE_TEMPLATE", async () => {
@@ -530,7 +604,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
     const deadlineSeconds = Math.floor(fixture.deadline.getTime() / 1_000);
     const viewerContext = await newContext(viewerBrowserInstance, "viewer", { width: 1280, height: 800 });
     const viewer = await newPage(viewerContext);
-    const tracker = createViewerTracker(viewer, receipt);
+    const tracker = createViewerTracker(viewer, receipt, () => currentStep);
     const sample = async () => viewer.evaluate(readVideoState, PLAYER_VIDEO);
     const setPaused = async (wanted) => {
       const current = await sample();
@@ -591,7 +665,11 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
       receipt.capabilities.playerPath = receipt.viewer.playerPath;
       ensure(receipt.viewer.admissionOk, "ADMISSION_NOT_GRANTED");
       ensure(receipt.viewer.tokenFormPlayback, "PLAYBACK_NOT_TOKEN_FORM");
-      ensure(tracker.state.tokenForm > 0 && tracker.state.uidForm === 0, "STREAM_REQUESTS_NOT_TOKEN_FORM");
+      ensure(tracker.state.tokenForm > 0, "NO_TOKEN_FORM_STREAM_REQUEST");
+      // Only URLs the app itself chose must be signed; uid-form playlist/segment URIs written by
+      // Cloudflare into its own playlists are tallied by shape and must still load.
+      ensure(tracker.state.appUidForm === 0, "APP_UID_FORM_STREAM_REQUESTS");
+      ensure(receipt.viewer.providerRequestFailures === 0, "PROVIDER_STREAM_REQUESTS_FAILED");
       ensure(exp?.matches === true, "TOKEN_EXP_MISMATCH");
       // Quick: the deadline is inside the first token's window, so exp must be the deadline itself.
       if (scenario === "quick") ensure(exp.deadlineCapped && exp.expEqualsDeadline, "TOKEN_EXP_NOT_DEADLINE");
@@ -812,7 +890,7 @@ export async function probeAllowedOrigins(playbackUrl, fetchImpl = fetch) {
 }
 
 async function runRecoveryCase({ viewer, tracker, sample, setPaused, startViewer, wait, receipt, deadlineSeconds, mode, state, blockMs }) {
-  const record = { mode, state, status: "FAIL", reasons: [], forbiddenServed: 0, positionBefore: null, positionAfter: null };
+  const record = { mode, state, status: "FAIL", reasons: [], forbiddenServed: 0, uidFormBlocked: 0, positionBefore: null, positionAfter: null };
   let handler = null;
   // One predicate instance: page.unroute matches the url argument and the handler.
   const isStream = (url) => isStreamDeliveryHost(url.hostname);
@@ -824,10 +902,20 @@ async function runRecoveryCase({ viewer, tracker, sample, setPaused, startViewer
     if (!blockedToken) { record.reasons.push("NO_TOKEN_IN_USE"); return record; }
     let active = true;
     let firstForbiddenAt = null;
+    // token_expiry: requests carrying the expiring token, plus uid-form playlist/segment URIs that
+    // Cloudflare wrote into playlists fetched with it (worst case: their access ends with that
+    // token, and the player's token swap only rewrites token-form paths). Requests with a renewed
+    // token pass. blanket_block: every Stream request.
     handler = (route) => {
-      const parsed = classifyStreamUrl(route.request().url());
-      if (active && parsed && parsed.kind !== "THUMBNAIL" && (mode === "blanket_block" || parsed.token === blockedToken)) {
+      const request = route.request();
+      const parsed = classifyStreamUrl(request.url());
+      let resourceType = "other";
+      try { resourceType = request.resourceType(); } catch { /* fixed fallback */ }
+      const providerUid = parsed?.form === "UID" && streamRequestOrigin(parsed, resourceType) === "PROVIDER";
+      if (active && parsed && parsed.kind !== "THUMBNAIL"
+        && (mode === "blanket_block" || parsed.token === blockedToken || providerUid)) {
         record.forbiddenServed += 1;
+        if (providerUid) record.uidFormBlocked += 1;
         firstForbiddenAt ??= Date.now();
         // CORS-readable like a same-origin-allowed Cloudflare answer, so the player sees the status.
         return route.fulfill({ status: 403, headers: { "access-control-allow-origin": ORIGIN, "content-type": "text/plain" }, body: "forbidden" });
@@ -911,7 +999,14 @@ async function runRenewal({ tracker, sample, startViewer, wait, receipt, deadlin
   let renewed = null;
   let earlySourceFetches = 0;
   let unavailableSeen = false;
-  while (Date.now() < giveUpAt) {
+  // After the renewal, keep playing until the first token has been expired for 3 minutes (if the
+  // replay deadline allows): segment URIs from playlists loaded with it must keep working.
+  const initialExpMs = Number.isSafeInteger(source.claims?.exp) ? source.claims.exp * 1_000 : null;
+  const pastExpTarget = initialExpMs === null ? null : initialExpMs + 180_000;
+  const pastExpObservable = pastExpTarget !== null && pastExpTarget <= deadlineSeconds * 1_000 - 90_000;
+  result.pastInitialExpObservable = pastExpObservable;
+  const observeUntil = () => Math.max(renewed.atMs + 120_000, pastExpObservable ? pastExpTarget : 0);
+  while (renewed ? Date.now() < observeUntil() : Date.now() < giveUpAt) {
     const current = await sample();
     if (current) samples.push({ atMs: Date.now(), ...current });
     if (await viewer.locator('[data-testid="live-unavailable"]').count() > 0) unavailableSeen = true;
@@ -922,7 +1017,6 @@ async function runRenewal({ tracker, sample, startViewer, wait, receipt, deadlin
       earlySourceFetches = tracker.state.sources.slice(sourceIndex + 1).filter((candidate) => candidate !== renewed
         && candidate.atMs < source.atMs + (expected - 60) * 1_000).length;
     }
-    if (renewed && Date.now() > renewed.atMs + 120_000) break;
     await wait(5_000);
   }
   const progress = assessPlaybackProgress(samples, { maxStallSeconds: 10, minAdvanceSeconds: 60 });
@@ -949,12 +1043,15 @@ async function runRenewal({ tracker, sample, startViewer, wait, receipt, deadlin
     if (!result.renewedExpEqualsDeadline) result.reasons.push("RENEWED_EXP_NOT_DEADLINE");
     if (result.newTokenStreamRequests < 1) result.reasons.push("NEW_TOKEN_NOT_USED");
     if (!(result.advancedAfterRenewalSeconds >= 60)) result.reasons.push("NOT_PLAYING_AFTER_RENEWAL");
+    const pastExp = pastExpTarget === null ? [] : samples.filter((entry) => entry.atMs >= initialExpMs);
+    result.advancedPastInitialExpSeconds = pastExp.length >= 2 ? round1(pastExp.at(-1).currentTime - pastExp[0].currentTime) : 0;
+    if (pastExpObservable && !(result.advancedPastInitialExpSeconds >= 120)) result.reasons.push("NOT_PLAYING_PAST_FIRST_TOKEN_EXP");
   }
   result.streamErrors = tracker.streamErrorsSince(source.atMs);
   if (!progress.ok) result.reasons.push("PLAYBACK_INTERRUPTED");
   if (result.streamErrors > 0) result.reasons.push("STREAM_ERRORS");
   if (unavailableSeen) result.reasons.push("UNAVAILABLE_STATE");
-  if (tracker.state.uidForm > 0) result.reasons.push("UID_FORM_REQUESTS");
+  if (tracker.state.appUidForm > 0) result.reasons.push("APP_UID_FORM_REQUESTS");
   result.status = result.reasons.length === 0 ? "PASS" : "FAIL";
   return result;
 }
