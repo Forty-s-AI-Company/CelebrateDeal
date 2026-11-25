@@ -153,6 +153,8 @@
    # 確認 results 後加上 "apply": true；有 nextCursor 就帶 "cursor" 繼續，直到 nextCursor 為 null
    ```
 
+   Staging 可改用 `.github/workflows/staging-stream-require-signed-urls.yml`（只能從受保護的 master 手動觸發，先驗 lineage 與固定 alias 才注入 `JOB_SECRET`，自動跟 `nextCursor`，log 只印各狀態數量）；`apply` 預設 false，回滾選 `mode: unlock`。
+
    結果只含 `videoId`、`uid` 與狀態；`failed` 的項目可重跑（同一設定重送結果相同），`not_found` 表示 Cloudflare 上已無該資源。每次 `apply` 會寫一筆稽核；回應為 207（`audited: false`）時 Cloudflare 已變更但稽核沒寫入，要另外記錄這批結果。
 6. **Staging 驗證（舊網址失效）**：抽樣確認舊的 `https://videodelivery.net/<uid>/manifest/video.m3u8` 被拒、經入場取得的網址可播放、其他網域嵌入被 `allowedOrigins` 擋下；確認直播進行中以 live input 播放也要求簽章（第 6 節待實測項目），live input 的 `meta`、錄影模式在 PUT 後未被改動。
 7. **Production**：Staging 全部通過後，對 Production 重複第 1–6 步。
