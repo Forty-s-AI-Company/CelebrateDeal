@@ -11,7 +11,7 @@ import {
   finalVerdict, formatReceiptLines, isStreamDeliveryHost, receiptLeaks, renewalDelaySeconds,
   replayDeadline, replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor,
   PAGE_ERROR_DETAIL_LIMIT, classifyRequestFailure, classifyVideoLock, postLockCoverage, describePageError, isBenignPageError, streamTokenSubject,
-  streamRequestOrigin, tallyStreamRequest, taipeiDateTimeLocal, validUploadUrl, withCorruptedSignature,
+  describeErrorSample, streamRequestOrigin, streamSegmentIdentity, summarizeStreamErrors, tallyStreamRequest, taipeiDateTimeLocal, validUploadUrl, withCorruptedSignature,
 } from "./staging-stream-playback-browser-core.mjs";
 
 /**
@@ -98,6 +98,26 @@ function safeResourceType(request) {
   try { return request.resourceType(); } catch { return "other"; }
 }
 
+const ERROR_SAMPLE_READ_LIMIT = 10;
+
+/** One error response as a redacted sample; the body may be unavailable (never throws, never hangs). */
+async function readErrorSample(response) {
+  const atMs = Date.now();
+  let contentType = null;
+  let body = null;
+  let timer;
+  try { contentType = response.headers()["content-type"] ?? null; } catch { /* fixed fallback */ }
+  try {
+    body = await Promise.race([
+      response.text(),
+      new Promise((resolve) => { timer = setTimeout(() => resolve(null), 2_000); }),
+    ]);
+  } catch { body = null; } finally { clearTimeout(timer); }
+  let status = 0;
+  try { status = response.status(); } catch { /* fixed fallback */ }
+  return { atMs, ...describeErrorSample({ status, contentType, body }) };
+}
+
 /** Network and playback-source observations for one viewer page; tokens stay in memory. */
 function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
   const state = {
@@ -118,6 +138,7 @@ function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
   const countProviderFailure = (entry, outcome) => {
     if (entry?.origin === "PROVIDER" && outcome === "failed") receipt.viewer.providerRequestFailures += 1;
   };
+  const errorSamples = [];
   const failureOutcome = (request) => {
     if (injected.has(request)) return "injected";
     let errorText = null;
@@ -152,7 +173,10 @@ function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
       state.stream.push({
         atMs: Date.now(), status: response.status(), token: tokenIndex(parsed.token), kind: parsed.kind,
         form: parsed.form, origin: entry?.origin ?? "APP",
+        identity: streamSegmentIdentity(response.url()), injected: outcome === "injected",
       });
+      // Diagnostics only: a few non-injected error bodies, redacted before they are kept.
+      if (outcome === "failed" && errorSamples.length < ERROR_SAMPLE_READ_LIMIT) errorSamples.push(readErrorSample(response));
       return;
     }
     if (url.origin !== ORIGIN) return;
@@ -195,6 +219,13 @@ function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
     streamOkSince: (sinceMs, predicate = () => true) => state.stream.some((entry) => entry.atMs > sinceMs
       && entry.status >= 200 && entry.status < 300 && predicate(entry)),
     streamErrorsSince: (sinceMs) => state.stream.filter((entry) => entry.atMs > sinceMs && entry.status >= 400).length,
+    /** Aggregated, redacted diagnostics of the Stream errors after `sinceMs` (never changes a verdict). */
+    streamErrorDiagnostics: async ({ sinceMs, initialExpMs, renewalMs }) => {
+      const read = (await Promise.all(errorSamples)).filter((sample) => sample.atMs > sinceMs);
+      return summarizeStreamErrors(state.stream, {
+        sinceMs, initialExpMs, renewalMs, samples: read.map((sample) => ({ status: sample.status, contentType: sample.contentType, body: sample.body })),
+      });
+    },
   };
 }
 
@@ -1102,6 +1133,10 @@ async function runRenewal({ tracker, sample, startViewer, wait, receipt, deadlin
   // UNLOCKED: this was observed before requireSignedURLs, so post-lock behaviour is unproven.
   result.videoLockAtRun = receipt.origin?.videoLock ?? "UNKNOWN";
   result.streamErrors = tracker.streamErrorsSince(source.atMs);
+  // Diagnostics only: no verdict reads them.
+  result.errorDiagnostics = await tracker.streamErrorDiagnostics({
+    sinceMs: source.atMs, initialExpMs, renewalMs: renewed?.atMs ?? null,
+  });
   if (!progress.ok) result.reasons.push("PLAYBACK_INTERRUPTED");
   if (result.streamErrors > 0) result.reasons.push("STREAM_ERRORS");
   if (unavailableSeen) result.reasons.push("UNAVAILABLE_STATE");

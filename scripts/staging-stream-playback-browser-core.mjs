@@ -663,6 +663,100 @@ export function receiptLeaks(text) {
     || /(?<![A-Za-z0-9+/_-])(?=[A-Za-z0-9+/_-]*[a-z])(?=[A-Za-z0-9+/_-]*[A-Z])(?=[A-Za-z0-9+/_-]*\d)[A-Za-z0-9+/_-]{48,}/u.test(text);
 }
 
+/** Path of a Stream URL without its first (uid or token) segment and without the query: a segment's identity. */
+export function streamSegmentIdentity(value) {
+  if (!classifyStreamUrl(value)) return null;
+  try { return new URL(value).pathname.split("/").slice(2).join("/").slice(0, 200); } catch { return null; }
+}
+
+export const ERROR_DIAG_SAMPLE_LIMIT = 3;
+const ERROR_DIAG_KEY_LIMIT = 8;
+const secondsBetween = (fromMs, toMs) => Math.round((toMs - fromMs) / 100) / 10;
+
+/**
+ * An error response reduced to `{ status, contentType, body }`: the media type without
+ * parameters, and the first 80 characters of the body with URLs, tokens and any 16+ character
+ * run (uid, hex, base64) redacted. A body that could not be read is "UNAVAILABLE".
+ */
+export function describeErrorSample({ status, contentType = null, body = null }) {
+  const type = /^\s*([a-z]+\/[a-z0-9.+-]{1,40})/iu.exec(String(contentType ?? ""))?.[1]?.toLowerCase() ?? "NONE";
+  const text = typeof body === "string"
+    ? sanitizeText(body.slice(0, 400).replace(/eyJ[A-Za-z0-9_+/=-]*/gu, "<long>").replace(/[A-Za-z0-9_+/=-]{16,}/gu, "<long>"), 80)
+    : "UNAVAILABLE";
+  return { status: Number.isSafeInteger(status) ? status : 0, contentType: type, body: text === "" ? "EMPTY" : text };
+}
+
+function countBy(items, keyOf) {
+  const counts = new Map();
+  for (const item of items) counts.set(keyOf(item), (counts.get(keyOf(item)) ?? 0) + 1);
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+  const result = Object.fromEntries(sorted.slice(0, ERROR_DIAG_KEY_LIMIT));
+  const rest = sorted.slice(ERROR_DIAG_KEY_LIMIT).reduce((sum, [, count]) => sum + count, 0);
+  if (rest > 0) result.OTHER = rest;
+  return result;
+}
+
+/**
+ * Diagnostics for Stream error responses (status >= 400, not injected by the runner) seen after
+ * `sinceMs`. `entries` are the tracker's response records in arrival order
+ * `{ atMs, status, kind, form, origin, identity, injected }`. Offsets are seconds from `sinceMs`
+ * (the first token's issue time). Only counts, enums and rounded seconds; `samples` are already
+ * redacted by describeErrorSample. Not derivable here: which playlist a failing segment's `p`/`s`
+ * signature came from; `playlistReloadsBetween` is the closest cheap signal.
+ */
+export function summarizeStreamErrors(entries, { sinceMs, initialExpMs = null, renewalMs = null, samples = [] } = {}) {
+  const window = (Array.isArray(entries) ? entries : []).filter((entry) => entry.atMs > sinceMs);
+  const isOk = (entry) => entry.status >= 200 && entry.status < 300 && !entry.injected;
+  const errors = window.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.status >= 400 && !entry.injected);
+  const offset = (ms) => (Number.isFinite(ms) ? secondsBetween(sinceMs, ms) : null);
+  const result = {
+    total: errors.length,
+    injectedExcluded: window.filter((entry) => entry.status >= 400 && entry.injected).length,
+    byStatus: countBy(errors, ({ entry }) => String(entry.status)),
+    byShape: countBy(errors, ({ entry }) => `${entry.origin ?? "APP"}/${entry.form}/${entry.kind}`),
+    initialExpOffsetSeconds: offset(initialExpMs),
+    renewalOffsetSeconds: offset(renewalMs),
+    firstErrorOffsetSeconds: errors.length ? offset(errors[0].entry.atMs) : null,
+    lastErrorOffsetSeconds: errors.length ? offset(errors.at(-1).entry.atMs) : null,
+    beforeInitialExp: 0, afterInitialExp0To60: 0, afterInitialExpLater: 0, expUnknown: 0,
+    retriedOk: 0, neverOk: 0,
+    playlistReloadsBetween: null, lastPlaylistBeforeFirstErrorOffsetSeconds: null,
+    samples: (Array.isArray(samples) ? samples : []).slice(0, ERROR_DIAG_SAMPLE_LIMIT),
+  };
+  for (const { entry, index } of errors) {
+    if (!Number.isFinite(initialExpMs)) result.expUnknown += 1;
+    else if (entry.atMs < initialExpMs) result.beforeInitialExp += 1;
+    else if (entry.atMs < initialExpMs + 60_000) result.afterInitialExp0To60 += 1;
+    else result.afterInitialExpLater += 1;
+    const retried = entry.identity != null && window.slice(index + 1).some((later) => isOk(later) && later.identity === entry.identity);
+    if (retried) result.retriedOk += 1; else result.neverOk += 1;
+  }
+  if (errors.length) {
+    const firstIndex = errors[0].index;
+    const isPlaylist = (entry) => isOk(entry) && (entry.kind === "PLAYLIST" || entry.kind === "MANIFEST");
+    const firstRetryOk = window.findIndex((entry, index) => index > firstIndex && isOk(entry) && entry.identity != null && entry.identity === errors[0].entry.identity);
+    const end = firstRetryOk === -1 ? window.length : firstRetryOk;
+    result.playlistReloadsBetween = window.slice(firstIndex + 1, end).filter(isPlaylist).length;
+    const before = window.slice(0, firstIndex).filter(isPlaylist).at(-1);
+    result.lastPlaylistBeforeFirstErrorOffsetSeconds = before ? offset(before.atMs) : null;
+  }
+  return result;
+}
+
+/** `401:27,403:2` / `NONE` for a count map. */
+function formatCounts(counts) {
+  const parts = Object.entries(counts ?? {}).map(([key, count]) => `${key}:${count}`);
+  return parts.length ? parts.join(",") : "NONE";
+}
+
+/** The `stream_playback_renewal_errors` summary line from `receipt.renewal.errorDiagnostics`. */
+export function formatRenewalErrorsLine(diagnostics) {
+  if (!diagnostics) return "stream_playback_renewal_errors=NOT_RUN";
+  const value = (item) => item ?? "null";
+  const samples = (diagnostics.samples ?? []).map((sample, index) => ` sample_${index + 1}=${sample.status}|${sample.contentType}|${String(sample.body).replace(/\s/gu, "_")}`).join("");
+  return `stream_playback_renewal_errors=total:${diagnostics.total} injected_excluded:${diagnostics.injectedExcluded} status:${formatCounts(diagnostics.byStatus)} shapes:${formatCounts(diagnostics.byShape)} initial_exp_s:${value(diagnostics.initialExpOffsetSeconds)} renewal_s:${value(diagnostics.renewalOffsetSeconds)} first_s:${value(diagnostics.firstErrorOffsetSeconds)} last_s:${value(diagnostics.lastErrorOffsetSeconds)} before_exp:${diagnostics.beforeInitialExp} after_exp_0_60:${diagnostics.afterInitialExp0To60} after_exp_later:${diagnostics.afterInitialExpLater} exp_unknown:${diagnostics.expUnknown} retried_ok:${diagnostics.retriedOk} never_ok:${diagnostics.neverOk} playlist_reloads_between:${value(diagnostics.playlistReloadsBetween)} last_playlist_before_first_s:${value(diagnostics.lastPlaylistBeforeFirstErrorOffsetSeconds)}${samples}`;
+}
+
 const yes = (value) => (value === true ? "true" : value === false ? "false" : "null");
 
 /** One grep-able `key=value` line per area; fixed enums, booleans, integers and status codes only. */
@@ -678,6 +772,7 @@ export function formatReceiptLines(receipt) {
     // Redacted messages stay in the JSON receipt (pageErrorDetails); the line keeps the fixed fields.
     `stream_playback_errors=page:${receipt.pageErrors} benign:${receipt.benignPageErrors ?? 0} ${(receipt.pageErrorDetails ?? []).map((item) => `${item.actor}/${item.phase}/${item.category}/${item.name}@${item.frame}${item.benign ? "(benign)" : ""}`).join(" ") || "NONE"}`,
     `stream_playback_renewal=status:${renewal.status ?? "NOT_RUN"} after_s:${renewal.observedAfterSeconds ?? "null"} expected_s:${renewal.expectedAfterSeconds ?? "null"} new_token_requests:${renewal.newTokenStreamRequests ?? "null"} renewed_exp_equals_deadline:${yes(renewal.renewedExpEqualsDeadline ?? null)} max_stall_s:${renewal.progress?.maxStallSeconds ?? "null"}`,
+    formatRenewalErrorsLine(renewal.errorDiagnostics),
     `stream_playback_recovery=${receipt.recovery.length ? receipt.recovery.map((item) => `${item.mode}/${item.state}:${item.status}${item.reasons?.length ? `(${item.reasons.join("+")})` : ""}`).join(" ") : "NOT_RUN"}`,
     `stream_playback_origin=status:${origin.status ?? "NOT_RUN"} app:${origin.appOrigin ?? "null"} none:${origin.noOrigin ?? "null"} foreign:${origin.foreignOrigin ?? "null"} invalid_token:${origin.invalidToken ?? "null"} invalid_token_cors_readable:${yes(origin.invalidTokenCorsReadable ?? null)} unsigned_uid:${origin.unsignedUidManifest ?? "null"} video_lock:${origin.videoLock ?? "UNKNOWN"}`,
     `stream_playback_pages=${receipt.pages.length ? receipt.pages.map((item) => `${item.page}:${item.status}`).join(" ") : "NOT_RUN"}`,

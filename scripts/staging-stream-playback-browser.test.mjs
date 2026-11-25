@@ -8,6 +8,7 @@ import {
   classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims, finalVerdict,
   formatReceiptLines, receiptLeaks, redactStreamUrl, renewalDelaySeconds, replayDeadline,
   replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor, taipeiDateTimeLocal,
+  describeErrorSample, formatRenewalErrorsLine, streamSegmentIdentity, summarizeStreamErrors,
   validUploadUrl, withCorruptedSignature,
 } from "./staging-stream-playback-browser-core.mjs";
 import { describeFailure, probeAllowedOrigins, runStreamPlaybackBrowser, safeReceiptText } from "./staging-stream-playback-browser.mjs";
@@ -433,11 +434,12 @@ test("receipt lines are single-line key=value records with fixed vocabulary", ()
   receipt.benignPageErrors = 1;
   receipt.pageErrorDetails.push({ actor: "viewer", phase: "RECOVERY", benign: true, ...describePageError({ name: "AbortError", message: "The play() request was interrupted by a new load request.", stack: "" }) });
   const lines = formatReceiptLines(receipt).split("\n");
-  assert.equal(lines.length, 10);
+  assert.equal(lines.length, 11);
+  assert.ok(lines.includes("stream_playback_renewal_errors=NOT_RUN"));
   assert.ok(lines.some((line) => line.startsWith("stream_playback_requests=app_uid:0 provider_uid:0 provider_failures:0 VIEWER_START/PROVIDER/UID/SEGMENT/xhr:videodelivery:/<uid>/video/<n>/seg_<n>.ts?keys=p:1(ok:0,failed:0,aborted:0,injected:0)")));
   assert.ok(lines.includes("stream_playback_errors=page:1 benign:1 viewer/RECOVERY/MEDIA_PLAY_INTERRUPTED/AbortError@NONE(benign)"));
   assert.equal(receiptLeaks(lines.join("\n")), false);
-  for (const line of lines) assert.match(line, /^stream_playback_[a-z]+=\S/u);
+  for (const line of lines) assert.match(line, /^stream_playback_[a-z]+(?:_[a-z]+)*=\S/u);
   assert.ok(lines.some((line) => line.includes("token_expiry/playing:FAIL(NOT_RESUMED+NOT_ADVANCING)")));
   assert.ok(lines.some((line) => line === "stream_playback_origin=status:PASS app:200 none:200 foreign:403 invalid_token:401 invalid_token_cors_readable:false unsigned_uid:null video_lock:UNKNOWN"));
   assert.ok(lines.some((line) => line.includes("safari:NOT_COVERED")));
@@ -559,4 +561,94 @@ test("workflow: protected master only, pinned actions, contract tests and proofs
   assert.match(jobs[1], /CELEBRATEDEAL_STREAM_VIEWER_BROWSER: webkit/u);
   assert.match(jobs[1], /CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: quick/u);
   assert.match(workflow, /concurrency:\n {2}group: staging-stream-playback-browser\n {2}cancel-in-progress: false/u);
+});
+
+test("segment identity ignores the uid/token segment and the query", () => {
+  const a = streamSegmentIdentity(`https://videodelivery.net/${uid}/video/240/seg_12.mp4?p=abc&s=def`);
+  const b = streamSegmentIdentity(`${customer}/${token({ nbf, exp: nbf })}/video/240/seg_12.mp4`);
+  assert.equal(a, "video/240/seg_12.mp4");
+  assert.equal(a, b);
+  assert.equal(streamSegmentIdentity("https://example.com/x/y"), null);
+});
+
+test("error samples keep status, media type and a redacted 80-character body; unreadable bodies are marked", () => {
+  const body = `{"error":"denied ${uid} ${signedManifest} eyJhbGciOiJSUzI1NiJ9abc ${"A".repeat(40)} ok"} ${"x".repeat(200)}`;
+  const sample = describeErrorSample({ status: 401, contentType: "Application/JSON; charset=utf-8", body });
+  assert.equal(sample.status, 401);
+  assert.equal(sample.contentType, "application/json");
+  assert.ok(sample.body.length <= 80);
+  for (const secret of [uid, "eyJ", "A".repeat(20), "cloudflarestream", token({ nbf, exp: nbf })]) assert.equal(sample.body.includes(secret), false, secret);
+  assert.equal(receiptLeaks(JSON.stringify(sample)), false);
+  assert.deepEqual(describeErrorSample({ status: 403, contentType: null, body: null }), { status: 403, contentType: "NONE", body: "UNAVAILABLE" });
+  assert.equal(describeErrorSample({ status: 500, body: "" }).body, "EMPTY");
+});
+
+test("stream error diagnostics bucket by status, shape, exp offset, retry and playlist reload", () => {
+  const since = 1_000_000;
+  const at = (seconds) => since + seconds * 1_000;
+  const seg = (name) => `video/240/${name}.mp4`;
+  const entry = (seconds, status, identity, extra = {}) => ({
+    atMs: at(seconds), status, kind: "SEGMENT", form: "UID", origin: "PROVIDER", identity, injected: false, ...extra,
+  });
+  const entries = [
+    entry(-5, 401, seg("old")), // before the window: ignored
+    entry(10, 200, seg("a")),
+    entry(1790, 200, "video/240/stream.m3u8", { kind: "PLAYLIST" }),
+    entry(1795, 401, seg("a")), // before exp (1800), retried ok below
+    entry(1805, 401, seg("b")), // 0-60 s after exp, never ok
+    entry(1810, 200, "video/240/stream.m3u8", { kind: "PLAYLIST", form: "TOKEN" }), // reload between
+    entry(1820, 200, seg("a")),
+    entry(1900, 403, seg("c")), // later than 60 s after exp, never ok
+    entry(1901, 403, seg("d"), { injected: true }), // injected by the runner: excluded
+  ];
+  const samples = Array.from({ length: 4 }, (_, index) => ({ status: 401, contentType: "application/json", body: `denied ${index}` }));
+  const result = summarizeStreamErrors(entries, { sinceMs: since, initialExpMs: at(1800), renewalMs: at(1680), samples });
+  assert.equal(result.total, 3);
+  assert.equal(result.injectedExcluded, 1);
+  assert.deepEqual(result.byStatus, { 401: 2, 403: 1 });
+  assert.deepEqual(result.byShape, { "PROVIDER/UID/SEGMENT": 3 });
+  assert.equal(result.initialExpOffsetSeconds, 1800);
+  assert.equal(result.renewalOffsetSeconds, 1680);
+  assert.equal(result.firstErrorOffsetSeconds, 1795);
+  assert.equal(result.lastErrorOffsetSeconds, 1900);
+  assert.deepEqual([result.beforeInitialExp, result.afterInitialExp0To60, result.afterInitialExpLater, result.expUnknown], [1, 1, 1, 0]);
+  assert.equal(result.retriedOk, 1);
+  assert.equal(result.neverOk, 2);
+  // First error is segment a; its first later 200 is at 1820, and a playlist loaded at 1810 in between.
+  assert.equal(result.playlistReloadsBetween, 1);
+  assert.equal(result.lastPlaylistBeforeFirstErrorOffsetSeconds, 1790);
+  assert.equal(result.samples.length, 3);
+});
+
+test("stream error diagnostics stay valid with no errors, no exp and many statuses", () => {
+  const empty = summarizeStreamErrors([], { sinceMs: 0 });
+  assert.equal(empty.total, 0);
+  assert.equal(empty.firstErrorOffsetSeconds, null);
+  assert.equal(empty.playlistReloadsBetween, null);
+  const many = Array.from({ length: 12 }, (_, index) => ({
+    atMs: 10 + index, status: 400 + index, kind: "SEGMENT", form: "UID", origin: "PROVIDER", identity: null, injected: false,
+  }));
+  const result = summarizeStreamErrors(many, { sinceMs: 0 });
+  assert.equal(Object.keys(result.byStatus).length, 9);
+  assert.equal(result.byStatus.OTHER, 4);
+  assert.equal(result.expUnknown, 12);
+  assert.equal(result.neverOk, 12);
+});
+
+test("the renewal errors line is one grep-able key=value line and leaks nothing", () => {
+  assert.equal(formatRenewalErrorsLine(undefined), "stream_playback_renewal_errors=NOT_RUN");
+  const diagnostics = summarizeStreamErrors([
+    { atMs: 1_100_000, status: 401, kind: "SEGMENT", form: "UID", origin: "PROVIDER", identity: "video/1/seg_1.mp4", injected: false },
+    { atMs: 1_105_000, status: 200, kind: "SEGMENT", form: "UID", origin: "PROVIDER", identity: "video/1/seg_1.mp4", injected: false },
+  ], {
+    sinceMs: 1_000_000, initialExpMs: 1_090_000, renewalMs: 1_080_000,
+    samples: [describeErrorSample({ status: 401, contentType: "application/json", body: `{"msg":"expired ${uid}"}` })],
+  });
+  const receipt = createReceipt(env);
+  receipt.renewal = { status: "FAIL", errorDiagnostics: diagnostics };
+  const line = formatReceiptLines(receipt).split("\n").find((item) => item.startsWith("stream_playback_renewal_errors="));
+  assert.ok(line);
+  assert.match(line, /^stream_playback_renewal_errors=total:1 injected_excluded:0 status:401:1 shapes:PROVIDER\/UID\/SEGMENT:1 initial_exp_s:90 renewal_s:80 first_s:100 last_s:100 before_exp:0 after_exp_0_60:1 after_exp_later:0 exp_unknown:0 retried_ok:1 never_ok:0 playlist_reloads_between:0 last_playlist_before_first_s:null sample_1=401\|application\/json\|/u);
+  assert.equal(line.includes(uid), false);
+  assert.equal(receiptLeaks(JSON.stringify(receipt)), false);
 });
