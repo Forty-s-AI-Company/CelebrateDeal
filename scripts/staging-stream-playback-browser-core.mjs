@@ -29,8 +29,8 @@ export const FIXTURE = Object.freeze({
   videoSha256: "ef3a94eda6b02c64f2858239bbe675b6c242b9434e13b5015f96d6939b08d950",
   videoDurationSeconds: 3300,
   videoTitle: "Stream Playback QA 55min v1",
-  formName: "Stream Playback QA 報名表 v1",
-  formSlug: "wp4-stream-playback-qa-v1",
+  formName: "Stream Playback QA 報名表 v2",
+  formSlug: "wp4-stream-playback-qa-v2",
   formHeadline: "Stream Playback QA 合成報名頁",
   templateName: "Stream Playback QA 報名成功信 v1",
   scriptName: "Stream Playback QA 互動腳本 v1",
@@ -113,6 +113,88 @@ export function decodeStreamTokenClaims(token) {
     if (!Number.isSafeInteger(nbf) || !Number.isSafeInteger(exp)) return null;
     return { nbf, exp, subIsUid: typeof sub === "string" && UID_SEGMENT.test(sub) };
   } catch { return null; }
+}
+
+/**
+ * Redacted shape of a Stream request path for the receipt: token → <token>, uid → <uid>, long
+ * ids → <long>/<hex>, numbers → <n>; query values are dropped, only sanitized key names stay.
+ * Example: `customer:/<uid>/video/<n>/seg_<n>.ts?keys=p,s`.
+ */
+export function redactStreamPath(value) {
+  let url;
+  try { url = new URL(value); } catch { return "<invalid>"; }
+  if (!isStreamDeliveryHost(url.hostname)) return "<non-stream>";
+  const path = url.pathname.split("/").map((segment) => {
+    if (segment === "") return "";
+    if (JWT_SEGMENT.test(segment)) return "<token>";
+    if (UID_SEGMENT.test(segment)) return "<uid>";
+    // A short file extension (.m3u8, .ts, .m4s, .mp4) stays as is; only the stem is generalised.
+    const [, stem, extension = ""] = /^(.*?)(\.[A-Za-z0-9]{1,5})?$/u.exec(segment);
+    return `${stem
+      .replace(/[A-Za-z0-9_-]{25,}/gu, "<long>")
+      .replace(/[0-9a-f]{12,}/giu, "<hex>")
+      .replace(/\d+/gu, "<n>")
+      .slice(0, 40)}${extension}`;
+  }).join("/").slice(0, 120);
+  const keys = [...new Set([...url.searchParams.keys()])]
+    .map((key) => (/^[A-Za-z0-9_.-]{1,24}$/u.test(key) ? key : "<key>"))
+    .sort().slice(0, 8);
+  const host = url.hostname.toLowerCase() === "videodelivery.net" ? "videodelivery" : "customer";
+  return `${host}:${path}${keys.length ? `?keys=${keys.join(",")}` : ""}`;
+}
+
+/**
+ * Who chose a Stream URL. The app hands the player exactly one URL per source (the signed
+ * `/manifest/video.m3u8`) and renders signed thumbnails; everything else the player fetches —
+ * variant playlists and segments — is a URI Cloudflare wrote into its own playlists, resolved
+ * by hls.js (xhr/fetch) or the native player (media). So:
+ * - APP: the entry manifest (any request type), thumbnails, and any request that is not a
+ *   player load (document, script, image, iframe, ...). A uid form here is an app finding.
+ * - PROVIDER: a player load of a playlist or segment. A uid form here is Cloudflare's choice
+ *   (recorded, and it must still succeed); it is not an unsigned URL produced by the app.
+ */
+export function streamRequestOrigin(parsed, resourceType) {
+  if (!parsed) return null;
+  const playerLoad = ["xhr", "fetch", "media"].includes(resourceType);
+  return playerLoad && (parsed.kind === "PLAYLIST" || parsed.kind === "SEGMENT") ? "PROVIDER" : "APP";
+}
+
+const RESOURCE_TYPES = new Set(["xhr", "fetch", "media", "image", "document", "script", "stylesheet", "other"]);
+export const STREAM_PATTERN_LIMIT = 25;
+
+/**
+ * Bounded per-shape tally of viewer Stream requests: `{ phase, origin, form, kind, resourceType,
+ * pattern, requests, ok, failed }`. `outcome` is "request", "ok" (2xx/3xx) or "failed"
+ * (4xx/5xx or a network failure). Shapes beyond the limit fold into one OVERFLOW entry.
+ */
+export function tallyStreamRequest(list, { phase, url, resourceType }, outcome) {
+  const parsed = classifyStreamUrl(url);
+  if (!parsed || parsed.kind === "THUMBNAIL") return null;
+  const type = RESOURCE_TYPES.has(resourceType) ? resourceType : "other";
+  const entry = {
+    phase: /^[A-Z_]{1,20}$/u.test(phase ?? "") ? phase : "OTHER",
+    origin: streamRequestOrigin(parsed, type), form: parsed.form, kind: parsed.kind, resourceType: type,
+    pattern: redactStreamPath(url),
+  };
+  const key = (item) => `${item.phase}|${item.origin}|${item.form}|${item.kind}|${item.resourceType}|${item.pattern}`;
+  let target = list.find((item) => key(item) === key(entry));
+  if (!target) {
+    // The last slot is reserved for OVERFLOW so no recorded shape ever loses its counts.
+    if (list.length >= STREAM_PATTERN_LIMIT - 1) {
+      target = list.find((item) => item.pattern === "OVERFLOW");
+      if (!target) {
+        target = { phase: "OTHER", origin: "MIXED", form: "MIXED", kind: "MIXED", resourceType: "other", pattern: "OVERFLOW", requests: 0, ok: 0, failed: 0 };
+        list.push(target);
+      }
+    } else {
+      target = { ...entry, requests: 0, ok: 0, failed: 0 };
+      list.push(target);
+    }
+  }
+  if (outcome === "request") target.requests += 1;
+  else if (outcome === "ok") target.ok += 1;
+  else target.failed += 1;
+  return { ...entry, parsed };
 }
 
 /** Same Stream URL with a deliberately broken signature (no signing work; for the Origin probe). */
@@ -335,10 +417,12 @@ export function createReceipt(env = {}) {
       videoReused: false, videoUploaded: false, videoReadyWaitSeconds: null, readySyncCalls: 0,
       formReused: false, templateReused: false, scriptReused: false, scriptBound: false,
       liveCreated: false, replayDeadlineMinutes: replayDeadlineMinutes(scenario), formPublic: null,
+      formScopeSwitched: false, formScopeRestored: null,
     },
     viewer: {
       admissionOk: false, playbackSourceResponses: 0, tokenFormPlayback: false, uidFormStreamRequests: 0,
-      tokenFormStreamRequests: 0, playerPath: "NONE", firstPlayback: null,
+      tokenFormStreamRequests: 0, appUidFormStreamRequests: 0, providerUidFormStreamRequests: 0,
+      providerRequestFailures: 0, streamRequestPatterns: [], playerPath: "NONE", firstPlayback: null,
       tokenExpChecks: 0, tokenExpMismatches: 0, deadlineCappedChecks: 0, deadlineCappedMatches: 0,
     },
     renewal: { status: "NOT_RUN" },
@@ -406,6 +490,7 @@ export function formatReceiptLines(receipt) {
     `stream_playback_result=${receipt.result} reason=${receipt.reason} browser=${receipt.viewerBrowser} scenario=${receipt.scenario}`,
     `stream_playback_steps=${steps}`,
     `stream_playback_viewer=token_form:${yes(receipt.viewer.tokenFormPlayback)} uid_form_requests:${receipt.viewer.uidFormStreamRequests} player:${receipt.viewer.playerPath} exp_checks:${receipt.viewer.tokenExpChecks} exp_mismatches:${receipt.viewer.tokenExpMismatches} deadline_capped_matches:${receipt.viewer.deadlineCappedMatches}/${receipt.viewer.deadlineCappedChecks}`,
+    `stream_playback_requests=app_uid:${receipt.viewer.appUidFormStreamRequests} provider_uid:${receipt.viewer.providerUidFormStreamRequests} provider_failures:${receipt.viewer.providerRequestFailures} ${(receipt.viewer.streamRequestPatterns ?? []).map((item) => `${item.phase}/${item.origin}/${item.form}/${item.kind}/${item.resourceType}:${item.pattern}=${item.requests}(ok:${item.ok},failed:${item.failed})`).join(" ") || "NONE"}`,
     `stream_playback_renewal=status:${renewal.status ?? "NOT_RUN"} after_s:${renewal.observedAfterSeconds ?? "null"} expected_s:${renewal.expectedAfterSeconds ?? "null"} new_token_requests:${renewal.newTokenStreamRequests ?? "null"} renewed_exp_equals_deadline:${yes(renewal.renewedExpEqualsDeadline ?? null)} max_stall_s:${renewal.progress?.maxStallSeconds ?? "null"}`,
     `stream_playback_recovery=${receipt.recovery.length ? receipt.recovery.map((item) => `${item.mode}/${item.state}:${item.status}${item.reasons?.length ? `(${item.reasons.join("+")})` : ""}`).join(" ") : "NOT_RUN"}`,
     `stream_playback_origin=status:${origin.status ?? "NOT_RUN"} app:${origin.appOrigin ?? "null"} none:${origin.noOrigin ?? "null"} foreign:${origin.foreignOrigin ?? "null"} invalid_token:${origin.invalidToken ?? "null"} invalid_token_cors_readable:${yes(origin.invalidTokenCorsReadable ?? null)}`,
