@@ -122,6 +122,7 @@ test("diagnostic categories are closed, sanitized and never persist raw errors",
     "GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED",
     "GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED",
     "GITHUB_DEPLOYMENT_PAGINATION_INVALID",
+    "GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED",
   ]) {
     assert.equal(safeDiagnosticCategory(new Error(lineageCode)), lineageCode);
     const classified = createInitialReceipt(sha);

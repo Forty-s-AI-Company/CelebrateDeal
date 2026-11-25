@@ -111,6 +111,7 @@ import {
   writeMvpPayUniReceipt,
   writeMvpPayUniSubscriptionReceipt,
 } from "./mvp-payuni-sandbox-e2e.mjs";
+import { verifyDeployment } from "./secure-staging-runner.mjs";
 
 test("fixed callback replay submits one empty request and validates persisted bounded evidence", async () => {
   let calls = 0;
@@ -1411,6 +1412,56 @@ test("alias attestation failures keep the lineage gate BLOCKED with a fixed reas
   assert.equal(await diagnoseMvpPayUniLineage(source, {
     verifyDeploymentImpl: async () => { throw new Error("https://unexpected.example/?token=secret"); },
   }), "LINEAGE_CHECK_FAILED");
+});
+
+test("--verify-lineage trusts only a success status created by vercel[bot] (PR #710 MINOR-1)", async () => {
+  const source = {
+    CELEBRATEDEAL_SOURCE_SHA: sourceSha,
+    CELEBRATEDEAL_DEPLOYMENT_HOST: previewHost,
+    GITHUB_TOKEN: "test-github-token",
+  };
+  const vercelBot = { login: "vercel[bot]", id: 35613825, type: "Bot" };
+  const someoneElse = { login: "maintainer", id: 1, type: "User" };
+  const exact = `https://${previewHost}`;
+  const elsewhere = "https://attacker-preview.vercel.app";
+  // Real GitHub lineage code over a fake GitHub API; master compare and alias health are faked after it.
+  const githubThen = (statuses, calls) => {
+    const rest = masterThenAlias(undefined, calls);
+    return async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://api.github.com" && url.pathname === "/repos/Forty-s-AI-Company/CelebrateDeal/deployments") {
+        calls.push("deployments");
+        return new Response(JSON.stringify([{ id: 42, sha: sourceSha, ref: sourceSha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelBot }]), { status: 200 });
+      }
+      if (url.pathname === "/repos/Forty-s-AI-Company/CelebrateDeal/deployments/42/statuses") {
+        calls.push("statuses");
+        return new Response(JSON.stringify(statuses), { status: 200 });
+      }
+      return rest(input, init);
+    };
+  };
+  const run = async (statuses) => {
+    const calls = [];
+    const fetchImpl = githubThen(statuses, calls);
+    const reason = await diagnoseMvpPayUniLineage(source, { verifyDeploymentImpl: (received) => verifyDeployment(received, fetchImpl), fetchImpl });
+    return { reason, calls };
+  };
+
+  const accepted = await run([{ creator: vercelBot, state: "success", environment_url: exact, target_url: exact }]);
+  assert.equal(accepted.reason, "VERIFIED");
+  assert.deepEqual(accepted.calls, ["deployments", "statuses", masterCompareUrl, `https://${stagingAlias}/api/health`]);
+
+  const ignored = await run([{ creator: someoneElse, state: "success", environment_url: exact }, { creator: vercelBot, state: "success", environment_url: exact }]);
+  assert.equal(ignored.reason, "VERIFIED");
+
+  const onlyOther = await run([{ creator: someoneElse, state: "success", environment_url: exact }]);
+  assert.equal(onlyOther.reason, "GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED");
+
+  // The steer attempt stops before the protected-master check or any alias request.
+  const steered = await run([{ creator: someoneElse, state: "success", environment_url: elsewhere }, { creator: vercelBot, state: "success", environment_url: exact }]);
+  assert.equal(steered.reason, "GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED");
+  assert.deepEqual(steered.calls, ["deployments", "statuses"]);
+  assert.equal(await verifyMvpPayUniLineage(source, { verifyDeploymentImpl: (received) => verifyDeployment(received, githubThen([{ creator: someoneElse, state: "success", environment_url: elsewhere }, { creator: vercelBot, state: "success", environment_url: exact }], [])), fetchImpl: githubThen([], []) }), false);
 });
 
 test("browser smoke lineage accepts a merge-queue master commit and attests the fixed alias", async () => {
