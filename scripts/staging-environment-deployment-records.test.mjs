@@ -27,7 +27,8 @@ const environmentName = (environment) => (typeof environment === "string" ? envi
 
 test("no Actions job records a deployment in the staging Preview environment", () => {
   const stagingJobs = workflowJobs().filter(({ job }) => typeof environmentName(job?.environment) === "string"
-    && environmentName(job.environment).includes("celebrate-deal-staging"));
+    && environmentName(job.environment).toLowerCase().includes("celebrate-deal-staging"));
+  // GitHub matches environment names case-insensitively, so the scan does too.
   // 33 jobs across 32 workflows on 2026-11-25; a drop to zero would mean the scan itself broke.
   assert.ok(stagingJobs.length >= 33, `found ${stagingJobs.length} staging jobs`);
   for (const { name, id, job } of stagingJobs) {

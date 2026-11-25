@@ -88,6 +88,10 @@ Preview hostname 與 sha 的對應，而且會隨 sha 在 `master` 停留的時�
   `environment: { name: ..., deployment: false }`，仍取得 environment secrets、受分支政策保護，
   但不再建 deployment 紀錄，也就不再把 Vercel 紀錄標成 `inactive`
   （`scripts/staging-environment-deployment-records.test.mjs` 鎖住每個 job）。
+  限制：`deployment: false` 與 GitHub App 的 custom deployment protection rule 不相容（job 會直接失敗）；
+  日後在這個 environment 加 custom rule 前要先改回或另行處理。另外，閘門只證明「這個 sha 曾由 Vercel 建置到這個 host」，
+  不保證是最新部署；「是不是目前版本」由 alias 自證與 protected master 檢查負責。
+  目前只檢查紀錄（deployment）的建立者是 `vercel[bot]`，尚未檢查 `success` status 的建立者（後續項目）。
 
 錯誤碼：
 
