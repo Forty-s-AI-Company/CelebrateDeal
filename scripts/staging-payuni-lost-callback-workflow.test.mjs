@@ -17,7 +17,7 @@ const index = (step) => job.steps.indexOf(step);
 
 test("the drill runs only from protected master in the staging Preview environment with read-only permissions", () => {
   assert.match(job.if, /github\.ref == 'refs\/heads\/master' && github\.ref_protected/u);
-  assert.equal(job.environment, "Preview – celebrate-deal-staging");
+  assert.deepEqual(job.environment, { name: "Preview – celebrate-deal-staging", deployment: false });
   assert.deepEqual(workflow.permissions, { contents: "read", deployments: "read", actions: "read" });
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.phase.options, ["pay", "verify"]);
   assert.equal(workflow.concurrency["cancel-in-progress"], false);

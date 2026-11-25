@@ -7,7 +7,7 @@ const job = workflow.jobs.observation;
 const execute = job.steps.find(step => step.name === "Observe failed original Sandbox trade and exact refund cleanup");
 test("issued trade observation uses protected staging bindings after all installation and lineage checks", () => {
   assert.match(job.if, /github.ref == 'refs\/heads\/master' && github.ref_protected/u);
-  assert.equal(job.environment, "Preview – celebrate-deal-staging");
+  assert.deepEqual(job.environment, { name: "Preview – celebrate-deal-staging", deployment: false });
   assert.deepEqual(workflow.permissions, { contents: "read", deployments: "read" });
   for (const step of job.steps.filter(step => step !== execute)) assert.equal(/secrets\./u.test(JSON.stringify(step)), false);
   assert.equal(execute.env.PAYUNI_ENV, "sandbox");

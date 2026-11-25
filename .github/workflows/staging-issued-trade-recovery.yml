@@ -24,7 +24,9 @@ concurrency:
 jobs:
   observation:
     if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
-    environment: Preview – celebrate-deal-staging
+    environment:
+      name: Preview – celebrate-deal-staging
+      deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

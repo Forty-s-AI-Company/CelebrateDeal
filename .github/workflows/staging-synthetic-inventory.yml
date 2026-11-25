@@ -13,7 +13,9 @@ jobs:
     if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: Preview – celebrate-deal-staging
+    environment:
+      name: Preview – celebrate-deal-staging
+      deployment: false
     steps:
       - name: Checkout protected inventory script
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

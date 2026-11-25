@@ -157,8 +157,8 @@ test("deployment verification reads every candidate and ignores latest failure r
   assert.equal(requests.length, 3);
   assert.equal(requests[0].searchParams.get("per_page"), "100");
   assert.deepEqual(requests.slice(1).map((request) => [request.pathname, request.searchParams.get("per_page")]), [
-    ["/repos/Forty-s-AI-Company/CelebrateDeal/deployments/41/statuses", "1"],
-    ["/repos/Forty-s-AI-Company/CelebrateDeal/deployments/42/statuses", "1"],
+    ["/repos/Forty-s-AI-Company/CelebrateDeal/deployments/41/statuses", "10"],
+    ["/repos/Forty-s-AI-Company/CelebrateDeal/deployments/42/statuses", "10"],
   ]);
   assert.doesNotMatch(JSON.stringify(result), /https?:\/\//iu);
 });
@@ -497,6 +497,92 @@ test("deployment verification accepts GitHub's final-page Link shape but rejects
     ];
     await assert.rejects(verifyDeployment(source, async () => responses.shift()), /GITHUB_DEPLOYMENT_PAGINATION_INVALID/u, terminalLink);
   }
+});
+
+// 2026-11-25 shape (record 8045452227): Vercel posted success with the Preview host, then GitHub
+// added `inactive` when an Actions job in the same environment recorded its own successful deployment.
+const inactiveAfterExactHostSuccess = Object.freeze([
+  { state: "inactive", environment_url: "", target_url: "https://safe-preview.vercel.app" },
+  { state: "success", environment_url: "https://safe-preview.vercel.app", target_url: "https://safe-preview.vercel.app" },
+]);
+
+test("deployment verification accepts a Vercel record marked inactive after its exact-host success", async () => {
+  const source = environment();
+  for (const honorRef of [true, false]) {
+    const requests = [];
+    const records = [...actionsRecords(3), vercelDeployment(7464859261)];
+    const result = await verifyDeployment(source, fakeDeploymentsApi(records, { 7464859261: inactiveAfterExactHostSuccess }, requests, { honorRef }));
+    assert.equal(result.deploymentMatched, true);
+    assert.equal(result.ready, true);
+    assert.equal(result.host, "safe-preview.vercel.app");
+    assert.deepEqual(statusRequests(requests).map((request) => [request.pathname, request.searchParams.get("per_page")]), [[`${deploymentsPath}/7464859261/statuses`, "10"]]);
+  }
+  // Repeated leading markers are skipped the same way.
+  const repeated = [{ state: "inactive" }, { state: "inactive" }, ...exactHostSuccess];
+  const result = await verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: repeated }, []));
+  assert.equal(result.deploymentMatched, true);
+});
+
+test("deployment verification still requires success with the exact host beneath an inactive marker", async () => {
+  const source = environment();
+  const rejected = {
+    "only inactive statuses": [{ state: "inactive", environment_url: "https://safe-preview.vercel.app" }],
+    "inactive over failure": [{ state: "inactive" }, { state: "failure", environment_url: "https://safe-preview.vercel.app" }],
+    "inactive over pending": [{ state: "inactive" }, { state: "pending", environment_url: "https://safe-preview.vercel.app" }],
+    "inactive over error over success": [{ state: "inactive" }, { state: "error" }, ...exactHostSuccess],
+    "inactive over another host": [{ state: "inactive" }, { state: "success", environment_url: "https://other-preview.vercel.app" }],
+    "inactive over conflicting URLs": [{ state: "inactive" }, { state: "success", environment_url: "https://safe-preview.vercel.app", target_url: "https://other-preview.vercel.app" }],
+    "inactive over a non-Vercel host": [{ state: "inactive" }, { state: "success", environment_url: "https://safe-preview.example.net" }],
+    "more inactive markers than one statuses page": Array.from({ length: 10 }, () => ({ state: "inactive" })),
+    "no statuses": [],
+  };
+  for (const [label, statuses] of Object.entries(rejected)) {
+    await assert.rejects(verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: statuses }, [])), /GITHUB_DEPLOYMENT_LINEAGE_MISMATCH/u, label);
+  }
+  // An Actions record pointing at the exact host stays untrusted whatever its statuses say.
+  const actionsOnly = [{ ...actionsDeployment(901), ref: sha }];
+  await assert.rejects(
+    verifyDeployment(source, fakeDeploymentsApi(actionsOnly, { 901: inactiveAfterExactHostSuccess }, [])),
+    /GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE/u,
+  );
+});
+
+test("an inactive-marked match is rejected once a newer Vercel record for the sha points elsewhere", async () => {
+  const source = environment();
+  const newerStatuses = {
+    "redeployed to another host": [{ state: "success", environment_url: "https://other-preview.vercel.app" }],
+    "newer deploy still building": [{ state: "pending" }],
+    "newer deploy failed": [{ state: "failure", environment_url: "https://other-preview.vercel.app" }],
+    "newer deploy itself inactive over another host": [{ state: "inactive" }, { state: "success", environment_url: "https://other-preview.vercel.app" }],
+  };
+  for (const [label, statuses] of Object.entries(newerStatuses)) {
+    for (const honorRef of [true, false]) {
+      // Listing is newest first: the newer Vercel record (higher id) comes before the inactive match.
+      const records = [vercelDeployment(43), ...actionsRecords(3), vercelDeployment(42)];
+      await assert.rejects(
+        verifyDeployment(source, fakeDeploymentsApi(records, { 42: inactiveAfterExactHostSuccess, 43: statuses }, [], { honorRef })),
+        /GITHUB_DEPLOYMENT_LINEAGE_MISMATCH/u,
+        `${label} honorRef=${honorRef}`,
+      );
+    }
+  }
+});
+
+test("an inactive-marked match is unaffected by older Vercel records, and a plain success keeps its old rules", async () => {
+  const source = environment();
+  const otherHost = [{ state: "success", environment_url: "https://other-preview.vercel.app" }];
+  const olderOther = await verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(43), vercelDeployment(41)], { 43: inactiveAfterExactHostSuccess, 41: otherHost }, []));
+  assert.equal(olderOther.deploymentMatched, true);
+
+  // A current (not inactive) success never required being the newest record; that stays unchanged.
+  const plainSuccess = await verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(43), vercelDeployment(42)], { 43: otherHost, 42: exactHostSuccess }, []));
+  assert.equal(plainSuccess.deploymentMatched, true);
+
+  // Two Vercel records that both resolve to the exact host stay ambiguous, inactive or not.
+  await assert.rejects(
+    verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(43), vercelDeployment(42)], { 43: exactHostSuccess, 42: inactiveAfterExactHostSuccess }, [])),
+    /GITHUB_DEPLOYMENT_AMBIGUOUS/u,
+  );
 });
 
 test("deployment verification stops paginating at the list page limit", async () => {

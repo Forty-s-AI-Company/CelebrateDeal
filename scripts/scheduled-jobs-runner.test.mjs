@@ -183,7 +183,7 @@ test("workflow is valid YAML, protected-branch only, and calls every scheduled j
   assert.notEqual(Number(SCHEDULE_DAILY.split(" ")[0]) % 5, 0, "daily minute must not collide with */5");
 
   const job = workflow.jobs["staging-jobs"];
-  assert.equal(job.environment, "Preview – celebrate-deal-staging");
+  assert.deepEqual(job.environment, { name: "Preview – celebrate-deal-staging", deployment: false });
   assert.match(job.if, /github\.ref == 'refs\/heads\/master'/u);
   assert.match(job.if, /github\.ref_protected/u);
   assert.match(job.if, /vars\.SCHEDULED_JOBS_PAUSED != 'true'/u);

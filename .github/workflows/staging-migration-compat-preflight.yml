@@ -16,7 +16,9 @@ jobs:
     if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: Preview – celebrate-deal-staging
+    environment:
+      name: Preview – celebrate-deal-staging
+      deployment: false
     env:
       CELEBRATEDEAL_SOURCE_SHA: 9193326824b8b6bf774bdfa28e4783a1a1b8f304
       CELEBRATEDEAL_DEPLOYMENT_HOST: celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app

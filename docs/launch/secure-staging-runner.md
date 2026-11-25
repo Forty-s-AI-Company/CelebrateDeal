@@ -73,6 +73,21 @@ Preview hostname 與 sha 的對應，而且會隨 sha 在 `master` 停留的時�
 - 原本的檢查全部保留：sha、environment、`production_environment === false`、最新
   status 為 `success`、host 與 `CELEBRATEDEAL_DEPLOYMENT_HOST` 完全相同、`.vercel.app`
   後綴與 `SAFE_HOST`，且必須剛好一筆符合（多於一筆仍為 `GITHUB_DEPLOYMENT_AMBIGUOUS`）。
+- `inactive` 標記（2026-11-25 起）：「最新 status」指最新一筆**不是** `inactive` 的 status
+  （每筆 Vercel 紀錄讀最新 10 筆 status）。原因：Actions job 綁到 staging environment 時，
+  GitHub 會替該 job 建一筆 deployment，job 成功後把同 environment 先前所有紀錄（包含 Vercel 的）
+  補一筆 `inactive`。實例：sha `ac1050b4` 的 Vercel 紀錄 8045452227 在 01:16:15Z `success`，
+  01:27:30Z 被排程 job 的紀錄 8045629233 標成 `inactive`，之後 stream playback runner 就回
+  `GITHUB_DEPLOYMENT_LINEAGE_MISMATCH`。Vercel 自己發 status 時不觸發這個標記（較新的 Vercel 部署
+  不會讓舊 Vercel 紀錄變 `inactive`，c081110b、f6bd35a0 都只在 Actions 紀錄出現後才變），
+  所以 `inactive` 只代表「這個 environment 之後有別的部署」，不代表這個 build 不存在。
+  `inactive` 之下必須直接是 Vercel 發的 `success` 且 host 相符；夾著 `failure`／`error`／`pending`
+  或整頁都是 `inactive` 一律不符。被標 `inactive` 的那筆只有在同一 sha 沒有更新（id 較大）、
+  且指向別的 host（或尚未成功）的 Vercel 紀錄時才接受。
+- 根因修正：所有綁 `Preview – celebrate-deal-staging` 的 Actions job 改成
+  `environment: { name: ..., deployment: false }`，仍取得 environment secrets、受分支政策保護，
+  但不再建 deployment 紀錄，也就不再把 Vercel 紀錄標成 `inactive`
+  （`scripts/staging-environment-deployment-records.test.mjs` 鎖住每個 job）。
 
 錯誤碼：
 
@@ -80,7 +95,7 @@ Preview hostname 與 sha 的對應，而且會隨 sha 在 `master` 停留的時�
 |---|---|
 | `GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE` | 列表有紀錄，但沒有任何一筆是 `vercel[bot]`（Bot）建立；在 `ref` 過濾正常時只會出現在 ref 等於 sha 卻不是 Vercel 建立的紀錄，或 API 忽略了 `ref`。 |
 | `GITHUB_DEPLOYMENT_AMBIGUOUS` | 完全沒有候選（含 `ref=<sha>` 查無紀錄，通常是 Vercel 尚未部署這個 sha 或 GitHub 整合中斷），或多於一筆 Vercel 紀錄同時符合 host。 |
-| `GITHUB_DEPLOYMENT_LINEAGE_MISMATCH` | 有 Vercel 候選，但沒有一筆成功且 host 相符。 |
+| `GITHUB_DEPLOYMENT_LINEAGE_MISMATCH` | 有 Vercel 候選，但沒有一筆成功且 host 相符（`inactive` 標記之下的 status 也算），或相符的那筆已被標 `inactive` 而同 sha 有更新的 Vercel 紀錄指向別處。 |
 | `GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED` | 列表超過 10 頁（1000 筆）仍未結束。 |
 | `GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED` | 列表頁數加 Vercel statuses 讀取超過 20 次。 |
 

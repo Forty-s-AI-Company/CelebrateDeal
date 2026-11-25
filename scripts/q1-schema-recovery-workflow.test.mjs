@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 const workflow = readFileSync('.github/workflows/q1-schema-recovery.yml', 'utf8');
 test('only protected master injects fixed Sandbox query bindings after contracts and lineage', () => {
   assert.match(workflow, /github.ref == 'refs\/heads\/master' && github.ref_protected/);
-  assert.match(workflow, /environment: Preview – celebrate-deal-staging/);
+  assert.match(workflow, /environment:\r?\n\s+name: Preview – celebrate-deal-staging\r?\n\s+deployment: false\r?\n/);
   assert.match(workflow, /persist-credentials: false/);
   for (const name of ['STAGING_DATABASE_URL','JOB_SECRET','PAYUNI_SANDBOX_MERCHANT_ID','PAYUNI_SANDBOX_HASH_KEY','PAYUNI_SANDBOX_HASH_IV']) {
     assert.ok(workflow.includes(name + ': ${{ secrets.' + name + ' }}'));

@@ -333,7 +333,7 @@ test("workflow: protected master only, pinned actions, contract tests and proofs
   assert.equal(jobs.length, 2);
   for (const job of jobs) {
     assert.match(job, /github\.ref == 'refs\/heads\/master' && github\.ref_protected/u);
-    assert.match(job, /environment: Preview – celebrate-deal-staging/u);
+    assert.match(job, /environment:\r?\n\s+name: Preview – celebrate-deal-staging\r?\n\s+deployment: false\r?\n/u);
     assert.match(job, /persist-credentials: false/u);
     const firstSecret = job.indexOf("secrets.");
     for (const before of ["npm ci --ignore-scripts", "node --test scripts/staging-stream-playback-browser.test.mjs", "--verify-lineage"]) {
