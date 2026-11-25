@@ -10,6 +10,7 @@ import {
   classifyRequest, classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims,
   finalVerdict, formatReceiptLines, isStreamDeliveryHost, receiptLeaks, renewalDelaySeconds,
   replayDeadline, replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor,
+  PAGE_ERROR_DETAIL_LIMIT, classifyRequestFailure, describePageError, isBenignPageError,
   streamRequestOrigin, tallyStreamRequest, taipeiDateTimeLocal, validUploadUrl, withCorruptedSignature,
 } from "./staging-stream-playback-browser-core.mjs";
 
@@ -93,6 +94,10 @@ function readVideoState(selector) {
   };
 }
 
+function safeResourceType(request) {
+  try { return request.resourceType(); } catch { return "other"; }
+}
+
 /** Network and playback-source observations for one viewer page; tokens stay in memory. */
 function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
   const state = {
@@ -105,14 +110,19 @@ function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
     if (index === -1) { state.tokens.push(token); index = state.tokens.length - 1; }
     return index;
   };
-  const tally = (request, outcome) => {
-    let resourceType = "other";
-    try { resourceType = request.resourceType(); } catch { /* fixed fallback */ }
-    return tallyStreamRequest(receipt.viewer.streamRequestPatterns, { phase: phaseOf(), url: request.url(), resourceType }, outcome);
+  const tally = (request, outcome) => tallyStreamRequest(receipt.viewer.streamRequestPatterns,
+    { phase: phaseOf(), url: request.url(), resourceType: safeResourceType(request) }, outcome);
+  // Requests answered by the runner's own RECOVERY 403s; they are tallied as injected, never failed.
+  const injected = new WeakSet();
+  /** Only a genuine delivery failure of a player load counts (not an abort, not an injected 403). */
+  const countProviderFailure = (entry, outcome) => {
+    if (entry?.origin === "PROVIDER" && outcome === "failed") receipt.viewer.providerRequestFailures += 1;
   };
-  /** Provider failures during RECOVERY are the 403s the runner itself injects. */
-  const countProviderFailure = (entry) => {
-    if (entry?.origin === "PROVIDER" && phaseOf() !== "RECOVERY") receipt.viewer.providerRequestFailures += 1;
+  const failureOutcome = (request) => {
+    if (injected.has(request)) return "injected";
+    let errorText = null;
+    try { errorText = request.failure()?.errorText ?? null; } catch { /* fixed fallback */ }
+    return classifyRequestFailure(errorText) === "ABORTED" ? "aborted" : "failed";
   };
   page.on("request", (request) => {
     const entry = tally(request, "request");
@@ -125,14 +135,20 @@ function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
     }
     if (entry.form === "TOKEN") { state.tokenForm += 1; receipt.viewer.tokenFormStreamRequests += 1; }
   });
-  page.on("requestfailed", (request) => countProviderFailure(tally(request, "failed")));
+  page.on("requestfailed", (request) => {
+    // e.g. 2026-11-25 run 45554492545: Chrome's native load of `<video src>` (resourceType media)
+    // got its playlist response and was then cancelled when hls.js attached MediaSource.
+    const outcome = failureOutcome(request);
+    countProviderFailure(tally(request, outcome), outcome);
+  });
   page.on("response", (response) => {
     let url;
     try { url = new URL(response.url()); } catch { return; }
     const parsed = classifyStreamUrl(response.url());
     if (parsed && parsed.kind !== "THUMBNAIL") {
-      const entry = tally(response.request(), response.status() < 400 ? "ok" : "failed");
-      if (response.status() >= 400) countProviderFailure(entry);
+      const outcome = response.status() < 400 ? "ok" : injected.has(response.request()) ? "injected" : "failed";
+      const entry = tally(response.request(), outcome);
+      countProviderFailure(entry, outcome);
       state.stream.push({
         atMs: Date.now(), status: response.status(), token: tokenIndex(parsed.token), kind: parsed.kind,
         form: parsed.form, origin: entry?.origin ?? "APP",
@@ -174,6 +190,8 @@ function createViewerTracker(page, receipt, phaseOf = () => "OTHER") {
       return state.sources.at(-1)?.token ?? null;
     },
     tokenIndex,
+    /** Call before the runner itself answers a request (RECOVERY 403s). */
+    markInjected: (request) => { injected.add(request); },
     streamOkSince: (sinceMs, predicate = () => true) => state.stream.some((entry) => entry.atMs > sinceMs
       && entry.status >= 200 && entry.status < 300 && predicate(entry)),
     streamErrorsSince: (sinceMs) => state.stream.filter((entry) => entry.atMs > sinceMs && entry.status >= 400).length,
@@ -288,9 +306,17 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
     await context.routeWebSocket("**/*", (socket) => socket.close());
     return context;
   };
-  const newPage = async (context) => {
+  const newPage = async (context, actor) => {
     const page = await context.newPage();
-    page.on("pageerror", () => { receipt.pageErrors += 1; });
+    page.on("pageerror", (error) => {
+      // Redacted fields only (describePageError); a narrowly benign interrupted play() is counted apart.
+      const described = describePageError(error);
+      const benign = isBenignPageError(described);
+      if (benign) receipt.benignPageErrors += 1; else receipt.pageErrors += 1;
+      if (receipt.pageErrorDetails.length < PAGE_ERROR_DETAIL_LIMIT) {
+        receipt.pageErrorDetails.push({ actor, phase: STEPS.includes(currentStep) ? currentStep : "OTHER", benign, ...described });
+      }
+    });
     page.on("dialog", (dialog) => { void dialog.dismiss().catch(() => {}); });
     activePage = page;
     return page;
@@ -332,7 +358,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
     const ownerBrowser = await launch(viewerBrowser === "webkit" ? "chromium" : "chrome");
     const viewerBrowserInstance = viewerBrowser === "webkit" ? await launch("webkit") : ownerBrowser;
     ownerContext = await newContext(ownerBrowser, "owner");
-    const owner = await newPage(ownerContext);
+    const owner = await newPage(ownerContext, "owner");
 
     await step("OWNER_SESSION", ensureOwnerSession);
 
@@ -603,7 +629,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
 
     const deadlineSeconds = Math.floor(fixture.deadline.getTime() / 1_000);
     const viewerContext = await newContext(viewerBrowserInstance, "viewer", { width: 1280, height: 800 });
-    const viewer = await newPage(viewerContext);
+    const viewer = await newPage(viewerContext, "viewer");
     const tracker = createViewerTracker(viewer, receipt, () => currentStep);
     const sample = async () => viewer.evaluate(readVideoState, PLAYER_VIDEO);
     const setPaused = async (wanted) => {
@@ -838,7 +864,7 @@ async function runPageChecks({ owner, anonymous, newPage, receipt, fixture, wait
 
   // Public registration page promo video, as an anonymous visitor.
   try {
-    const page = await newPage(anonymous);
+    const page = await newPage(anonymous, "anonymous");
     const manifests = { token: 0, uid: 0 };
     page.on("request", (request) => {
       const parsed = classifyStreamUrl(request.url());
@@ -916,6 +942,7 @@ async function runRecoveryCase({ viewer, tracker, sample, setPaused, startViewer
         && (mode === "blanket_block" || parsed.token === blockedToken || providerUid)) {
         record.forbiddenServed += 1;
         if (providerUid) record.uidFormBlocked += 1;
+        tracker.markInjected(request);
         firstForbiddenAt ??= Date.now();
         // CORS-readable like a same-origin-allowed Cloudflare answer, so the player sees the status.
         return route.fulfill({ status: 403, headers: { "access-control-allow-origin": ORIGIN, "content-type": "text/plain" }, body: "forbidden" });
