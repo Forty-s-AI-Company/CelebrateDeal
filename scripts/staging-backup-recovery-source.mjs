@@ -26,6 +26,7 @@ const APPROVED_BACKUP_BLOBS = Object.freeze({
     "019e6e1679b83cc2c4e0eb7f9e49030de64114ab", // LINE step prints missing binding names (never values) and records its fixed failure stage for the receipt validator; WP2 source, secrets, backup and artifacts unchanged.
     "90c630bad001e1fc04a483d7736523cef34b1bbc", // #545: #547 LINE diagnostics (missing binding names, fixed failure stage) plus the F-031 DATA_ENCRYPTION_KEYRING secret on the LINE task step only; WP2 source, secrets, backup and artifacts unchanged.
     "04dfa211f96499486ef0447dda425132aa48fb4c", // Supersedes Dependabot #569: only the pinned action SHAs change (checkout v4.4.0 -> v7.0.1, setup-node v4.4.0 -> v7.1.0, upload-artifact v4.6.2 -> v7.0.2); every with: input, step, secret, task gate, artifact name and path are byte-identical; WP2 source, secrets, backup and artifacts unchanged.
+    "b7c7f86177072ffa5b6efe24ba25d1a3690f4de6", // #710: only `environment` becomes { name, deployment: false } so the job no longer creates a deployment record; WP2 source, secrets, backup and artifacts unchanged.
   ],
   "scripts/staging-retained-backup.mjs": ["acf26bf628903feef3d549e4500b5c478e7e4312"],
   "scripts/validate-staging-retained-backup.mjs": [
@@ -37,6 +38,7 @@ const APPROVED_BACKUP_BLOBS = Object.freeze({
     "8b14996eeca4e1616743fb6c168991287c626b28", // #290
     "0f869399153fd058a988a25fe5c3f56dcd8acd38", // #534: lineage gate lists by ref=<sha>, reads statuses only for vercel[bot] deployments once per id (page size 100, page limit 10); WP2 backup, restore and receipt unchanged.
     "9c1dde3c118ebcf3f0f67b3a1b3736d1e46014d3", // #542: shared protected-master gate and fixed-alias self-attestation for alias-using runners; WP2 is lineage-only (Preview probe skipped, receipt aliasAttestation "not_applicable", retained receipts still validate); WP2 backup and restore unchanged.
+    "6f2ad57e114786223a8585532d463b3c294142ec", // #710 (reviewed): lineage gate reads 10 statuses and accepts a Vercel record GitHub marked inactive only when the status under it is success for the exact host and no newer Vercel record for the sha points elsewhere; WP2 backup, restore and receipt unchanged.
   ],
 });
 
