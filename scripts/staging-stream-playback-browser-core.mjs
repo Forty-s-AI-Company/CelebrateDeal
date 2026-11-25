@@ -335,7 +335,9 @@ export function describePageError(error, context = {}) {
  * uncaught exceptions), and Playwright strips the "https:" prefix as an error name.
  */
 function loadReportUrl(rawName, text) {
-  const trimmed = String(text ?? "").trim();
+  // WebKit words a load it cancelled during navigation as "<url> due to access control checks."
+  // (2026-11-25 run 45574586283); only that exact suffix is stripped.
+  const trimmed = String(text ?? "").trim().replace(/ due to access control checks\.$/u, "");
   if (!/^\S+$/u.test(trimmed)) return null;
   let candidate = trimmed;
   if (/^https?$/iu.test(rawName) && trimmed.startsWith("/")) candidate = `${rawName}:/${trimmed}`;
@@ -353,7 +355,8 @@ function loadReportUrl(rawName, text) {
  * - MEDIA_PLAY_INTERRUPTED: an AbortError naming play() (a later load or pause rejected it).
  * - WEBKIT_LOAD_CANCELLED_BY_RUNNER_NAVIGATION: in the WebKit viewer, while the runner itself was
  *   navigating the page away, WebKit's console report of a load it cancelled — a Stream player
- *   load or the `/api/live-updates` poll, and only the bare URL. 2026-11-25 run 45561006960:
+ *   load or the `/api/live-updates` poll, and only the bare URL (optionally followed by WebKit's
+ *   " due to access control checks." wording, run 45574586283). 2026-11-25 run 45561006960:
  *   4 such reports in RECOVERY (each case reloads the page), at hls.js's `xhr.send()` and the
  *   `fetch(/api/live-updates)` call (whose rejection src/lib/live-updates-client.ts:243 handles);
  *   the poll is never touched by the runner's 403 route, so only the reload can have cancelled it.
