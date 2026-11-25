@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { attachHlsPlayback, type HlsConstructor, type HlsErrorData } from "@/lib/hls-playback-attachment";
+import {
+  attachHlsPlayback,
+  hlsStallRetryDelayMs,
+  HLS_STALL_MAX_AUTO_ATTEMPTS,
+  HLS_STALL_RETRY_MAX_MS,
+  type HlsConstructor,
+  type HlsErrorData,
+} from "@/lib/hls-playback-attachment";
 import { consumeSourceSwapPlay } from "@/lib/signed-playback-renewal";
 
 const firstUrl = "https://videodelivery.net/aaa.bbb.ccc/manifest/video.m3u8";
@@ -28,20 +35,23 @@ function fakeVideo({ nativeHls = false, currentTime = 0, paused = false } = {}) 
   };
 }
 
+type FakeHlsInstance = {
+  config: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void } | undefined;
+  loadSource: ReturnType<typeof vi.fn>;
+  attachMedia: ReturnType<typeof vi.fn>;
+  startLoad: ReturnType<typeof vi.fn>;
+  destroy: ReturnType<typeof vi.fn>;
+  emit: (data: HlsErrorData) => void;
+  fragLoaded: () => void;
+};
+
 function fakeHls(supported: boolean) {
-  const instances: Array<{
-    config: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void } | undefined;
-    loadSource: ReturnType<typeof vi.fn>;
-    attachMedia: ReturnType<typeof vi.fn>;
-    startLoad: ReturnType<typeof vi.fn>;
-    destroy: ReturnType<typeof vi.fn>;
-    emit: (data: HlsErrorData) => void;
-  }> = [];
+  const instances: FakeHlsInstance[] = [];
   class FakeHls {
     static isSupported = () => supported;
-    static Events = { ERROR: "hlsError" };
+    static Events = { ERROR: "hlsError", FRAG_LOADED: "hlsFragLoaded" };
     static ErrorTypes = { NETWORK_ERROR: "networkError" };
-    private errorListeners: Array<(event: string, data: HlsErrorData) => void> = [];
+    private listeners = new Map<string, Array<(event: string, data: HlsErrorData) => void>>();
     loadSource = vi.fn();
     attachMedia = vi.fn();
     startLoad = vi.fn();
@@ -50,10 +60,14 @@ function fakeHls(supported: boolean) {
       instances.push(this as never);
     }
     on(event: string, listener: (event: string, data: HlsErrorData) => void) {
-      if (event === "hlsError") this.errorListeners.push(listener);
+      if (!this.listeners.has(event)) this.listeners.set(event, []);
+      this.listeners.get(event)!.push(listener);
     }
     emit(data: HlsErrorData) {
-      for (const listener of this.errorListeners) listener("hlsError", data);
+      for (const listener of this.listeners.get("hlsError") ?? []) listener("hlsError", data);
+    }
+    fragLoaded() {
+      for (const listener of this.listeners.get("hlsFragLoaded") ?? []) listener("hlsFragLoaded", {});
     }
   }
   return { Hls: FakeHls as unknown as HlsConstructor, instances };
@@ -254,5 +268,256 @@ describe("attachHlsPlayback", () => {
     cleanup();
     await vi.advanceTimersByTimeAsync(60 * 60_000);
     expect(fetchSource).not.toHaveBeenCalled();
+  });
+});
+
+describe("hls.js stall recovery after a sustained rejection", () => {
+  const forbidden: HlsErrorData = { type: "networkError", fatal: true, response: { code: 403 } };
+
+  function fakeVisibility(hidden = false) {
+    const listeners = new Set<() => void>();
+    return {
+      hidden,
+      addEventListener: vi.fn((_type: string, listener: () => void) => listeners.add(listener)),
+      removeEventListener: vi.fn((_type: string, listener: () => void) => listeners.delete(listener)),
+      fire() {
+        for (const listener of [...listeners]) listener();
+      },
+      listenerCount: () => listeners.size,
+    };
+  }
+
+  /**
+   * One hls.js player behind a Stream CDN that answers every request with 403 while
+   * `cdn.blocked` is true (the staging runner's blanket block): each startLoad() then ends in a
+   * fatal 403 (hls.js does not retry 4xx and stops loading), otherwise in a loaded fragment.
+   */
+  async function stalledPlayer({ currentTime, paused, hidden = false }: { currentTime: number; paused: boolean; hidden?: boolean }) {
+    const video = fakeVideo({ currentTime, paused });
+    const visibility = fakeVisibility(hidden);
+    const { Hls, instances } = fakeHls(true);
+    const fetches: number[] = [];
+    const fetchSource = vi.fn(async () => {
+      fetches.push(Date.now());
+      return { playbackUrl: `https://videodelivery.net/r${fetches.length}.bbb.ccc/manifest/video.m3u8`, expiresInSeconds: 1_800 };
+    });
+    const cdn = { blocked: true };
+    const cleanup = attachHlsPlayback({
+      video: video as never,
+      url: firstUrl,
+      expiresInSeconds: 1_800,
+      fetchSource,
+      loadHls: async () => Hls,
+      random: () => 0,
+      visibility,
+    });
+    await settle();
+    const hls = instances[0]!;
+    const starts: Array<{ at: number; position: number }> = [];
+    hls.startLoad.mockImplementation((position: number) => {
+      starts.push({ at: Date.now(), position });
+      void Promise.resolve().then(() => (cdn.blocked ? hls.emit(forbidden) : hls.fragLoaded()));
+    });
+    return { video, visibility, hls, fetchSource, fetches, starts, cdn, cleanup };
+  }
+
+  it("backs off from an immediate attempt to a 30 second cap with jitter", () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 40].map((level) => hlsStallRetryDelayMs(level, () => 0)))
+      .toEqual([0, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000]);
+    expect(hlsStallRetryDelayMs(1, () => 1)).toBe(1_500);
+    expect(hlsStallRetryDelayMs(40, () => 1)).toBe(22_500);
+    expect(hlsStallRetryDelayMs(40, () => 7)).toBe(22_500);
+    expect(hlsStallRetryDelayMs(40, () => -1)).toBe(HLS_STALL_RETRY_MAX_MS);
+  });
+
+  it("resumes a playing video by itself once a 20 second blanket block ends, never from 0", async () => {
+    const { video, hls, fetchSource, fetches, starts, cdn } = await stalledPlayer({ currentTime: 100, paused: false });
+    const start = Date.now();
+
+    hls.emit(forbidden);
+    await settle();
+    // The renewal succeeds at once, but the next request is refused again.
+    expect(fetchSource).toHaveBeenCalledTimes(1);
+    expect(starts).toEqual([{ at: start, position: 100 }]);
+
+    video.currentTime = 112; // still playing out the buffer
+    await vi.advanceTimersByTimeAsync(20_000);
+    cdn.blocked = false;
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    // Attempts at 0, 2, 6, 14 and 30 s; the one at 30 s loads again.
+    expect(starts.map((item) => item.at - start)).toEqual([0, 2_000, 6_000, 14_000, 30_000]);
+    expect(starts.slice(1).every((item) => item.position === 112)).toBe(true);
+    expect(hls.loadSource).toHaveBeenCalledTimes(1);
+    // Renewals stay at least 5 s apart (the 2 s attempt reuses the token renewed at 0 s).
+    expect(fetches.map((at) => at - start)).toEqual([0, 6_000, 14_000, 30_000]);
+    expect(video.play).not.toHaveBeenCalled();
+
+    // Recovered: no further attempts.
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(starts).toHaveLength(5);
+  });
+
+  it("plays a video the stall paused once loading resumes, marked as a source-swap play", async () => {
+    const { video, hls, starts, cdn } = await stalledPlayer({ currentTime: 100, paused: false });
+    hls.emit(forbidden);
+    await settle();
+    video.paused = true;
+    await vi.advanceTimersByTimeAsync(20_000);
+    video.play.mockClear();
+    consumeSourceSwapPlay(video);
+
+    cdn.blocked = false;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(starts.at(-1)!.position).toBe(100);
+    expect(video.play).toHaveBeenCalledTimes(1);
+    expect(consumeSourceSwapPlay(video)).toBe(true);
+  });
+
+  it("keeps a paused video paused at its position, and loads at once when the viewer presses play", async () => {
+    const { video, hls, starts, cdn } = await stalledPlayer({ currentTime: 500, paused: true });
+    const start = Date.now();
+    hls.emit(forbidden);
+    await settle();
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    cdn.blocked = false;
+    // Before the next scheduled attempt (30 s) the viewer presses play.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(video.play).not.toHaveBeenCalled();
+    expect(starts.every((item) => item.position === 500)).toBe(true);
+    const before = starts.length;
+
+    video.paused = false;
+    video.fire("play");
+    await settle();
+    expect(starts).toHaveLength(before + 1);
+    expect(starts.at(-1)).toEqual({ at: start + 25_000, position: 500 });
+    expect(video.play).not.toHaveBeenCalled();
+
+    // The loaded fragment ended the stall; the 30 s attempt does not run.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(starts).toHaveLength(before + 1);
+  });
+
+  it("recovers a paused video by itself too, without starting it", async () => {
+    const { video, hls, starts, cdn } = await stalledPlayer({ currentTime: 500, paused: true });
+    hls.emit(forbidden);
+    await settle();
+    await vi.advanceTimersByTimeAsync(20_000);
+    cdn.blocked = false;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(starts).toHaveLength(5);
+    expect(starts.every((item) => item.position === 500)).toBe(true);
+    expect(video.play).not.toHaveBeenCalled();
+  });
+
+  it("does not undo a viewer pause made during the stall", async () => {
+    const { video, hls, starts, cdn } = await stalledPlayer({ currentTime: 100, paused: false });
+    hls.emit(forbidden);
+    await settle();
+    video.paused = true;
+    video.fire("pause");
+    cdn.blocked = false;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(starts).toHaveLength(2);
+    expect(video.play).not.toHaveBeenCalled();
+  });
+
+  it("caps automatic attempts and renewals during an endless block, then retries only on viewer play", async () => {
+    const { video, hls, fetches, starts } = await stalledPlayer({ currentTime: 100, paused: false });
+    const start = Date.now();
+    hls.emit(forbidden);
+    await settle();
+
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
+    expect(starts).toHaveLength(1 + HLS_STALL_MAX_AUTO_ATTEMPTS);
+    expect(starts.at(-1)!.at - start).toBeLessThan(10 * 60_000);
+    const gaps = starts.slice(1).map((item, index) => item.at - starts[index]!.at);
+    expect(Math.max(...gaps)).toBe(HLS_STALL_RETRY_MAX_MS);
+    expect(Math.min(...gaps)).toBe(2_000);
+    // At most one renewal per attempt, never closer than the renewal's 5 s minimum interval.
+    expect(fetches.length).toBeLessThanOrEqual(starts.length);
+    expect(Math.min(...fetches.slice(1).map((at, index) => at - fetches[index]!))).toBeGreaterThanOrEqual(5_000);
+
+    // Then quiet for an hour, apart from one restart per scheduled renewal (every 28 minutes).
+    const exhausted = starts.length;
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(starts.length - exhausted).toBe(2);
+
+    const quiet = starts.length;
+    video.fire("play");
+    await settle();
+    expect(starts).toHaveLength(quiet + 1);
+    expect(starts.every((item) => item.position === 100)).toBe(true);
+  });
+
+  it("does not loop without delay when loading fails again right after a recovery", async () => {
+    const { hls, starts, cdn } = await stalledPlayer({ currentTime: 100, paused: false });
+    const start = Date.now();
+    hls.emit(forbidden);
+    await settle();
+    cdn.blocked = false;
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(starts).toHaveLength(2);
+    // The failure returns 1 s after the fragment loaded: the backoff continues instead of restarting at 0.
+    cdn.blocked = true;
+    await vi.advanceTimersByTimeAsync(1_000);
+    hls.emit(forbidden);
+    await settle();
+    expect(starts).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(starts.map((item) => item.at - start)).toEqual([0, 2_000, 7_000]);
+  });
+
+  it("restarts other fatal network errors without renewing, and ignores non-fatal ones", async () => {
+    const { hls, fetchSource, starts, cdn } = await stalledPlayer({ currentTime: 70, paused: false });
+    hls.emit({ type: "networkError", fatal: false, response: { code: 502 } });
+    await settle();
+    expect(starts).toHaveLength(0);
+
+    cdn.blocked = false;
+    hls.emit({ type: "networkError", fatal: true, response: { code: 0 } });
+    await settle();
+    expect(starts).toEqual([{ at: Date.now(), position: 70 }]);
+    expect(fetchSource).not.toHaveBeenCalled();
+  });
+
+  it("waits for a hidden tab to show before reloading a paused video", async () => {
+    const { video, visibility, hls, starts, fetchSource, cdn } = await stalledPlayer({ currentTime: 300, paused: true, hidden: true });
+    hls.emit(forbidden);
+    await settle();
+    cdn.blocked = false;
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(starts).toHaveLength(0);
+    expect(fetchSource).not.toHaveBeenCalled();
+
+    visibility.hidden = false;
+    visibility.fire();
+    await settle();
+    expect(starts).toEqual([{ at: Date.now(), position: 300 }]);
+    expect(video.play).not.toHaveBeenCalled();
+  });
+
+  it("keeps retrying a playing video in a hidden tab", async () => {
+    const { hls, starts, cdn } = await stalledPlayer({ currentTime: 300, paused: false, hidden: true });
+    hls.emit(forbidden);
+    await settle();
+    cdn.blocked = false;
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(starts).toHaveLength(2);
+  });
+
+  it("stops retrying and removes its listeners on cleanup", async () => {
+    const { video, visibility, hls, starts, cleanup } = await stalledPlayer({ currentTime: 100, paused: false });
+    hls.emit(forbidden);
+    await settle();
+    expect(starts).toHaveLength(1);
+    cleanup();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(starts).toHaveLength(1);
+    expect(video.listenerCount("play")).toBe(0);
+    expect(video.listenerCount("pause")).toBe(0);
+    expect(visibility.listenerCount()).toBe(0);
   });
 });
