@@ -311,19 +311,24 @@ describe("hls.js stall recovery after a sustained rejection", () => {
    */
   async function stalledPlayer({
     currentTime, paused, hidden = false, tokenSeconds = 1_800, blockedFromOpen = false, renewalMs = 0, reloadFiresPause = false,
+    successfulRenewals = Number.POSITIVE_INFINITY,
   }: {
     currentTime: number; paused: boolean; hidden?: boolean; tokenSeconds?: number; blockedFromOpen?: boolean;
-    renewalMs?: number; reloadFiresPause?: boolean;
+    renewalMs?: number; reloadFiresPause?: boolean; successfulRenewals?: number;
   }) {
     const video = fakeVideo({ currentTime, paused });
     const visibility = fakeVisibility(hidden);
     const cdn = { blocked: blockedFromOpen };
     const reloads: Array<{ at: number; url: string }> = [];
-    // A blocked manifest fails fatally; a reload re-creates the MediaSource, which pauses the
+    // A blocked manifest fails fatally. Like hls.js, a reload re-creates the MediaSource only
+    // for a different URL (no source buffers exist before a manifest parsed), which pauses the
     // element without a pause event (HTML load algorithm; some engines also fire one).
+    let loadedUrl: string | null = null;
     const { Hls, instances } = fakeHls(true, (instance, url) => {
       reloads.push({ at: Date.now(), url });
-      if (reloads.length > 1) {
+      const rebuilds = loadedUrl !== null && url !== loadedUrl;
+      loadedUrl = url;
+      if (rebuilds) {
         if (reloadFiresPause && !video.paused) void Promise.resolve().then(() => video.fire("pause"));
         video.paused = true;
       }
@@ -340,6 +345,7 @@ describe("hls.js stall recovery after a sustained rejection", () => {
       fetches.push(Date.now());
       const playbackUrl = `https://videodelivery.net/r${fetches.length}.bbb.ccc/manifest/video.m3u8`;
       if (renewalMs > 0) await new Promise((resolve) => { setTimeout(resolve, renewalMs); });
+      if (fetches.length > successfulRenewals) return null;
       return { playbackUrl, expiresInSeconds: tokenSeconds };
     });
     const cleanup = attachHlsPlayback({
@@ -390,8 +396,8 @@ describe("hls.js stall recovery after a sustained rejection", () => {
     expect(starts.map((item) => item.at - start)).toEqual([0, 2_000, 6_000, 14_000, 30_000]);
     expect(starts.slice(1).every((item) => item.position === 112)).toBe(true);
     expect(hls.loadSource).toHaveBeenCalledTimes(1);
-    // One renewal per stall: the token renewed at 0 s still has more than half its 30 minutes left.
-    expect(fetches.map((at) => at - start)).toEqual([0]);
+    // The token renewed at 0 s is reused at 2 and 6 s; after three failed attempts on it, 14 s renews again.
+    expect(fetches.map((at) => at - start)).toEqual([0, 14_000]);
     expect(video.play).not.toHaveBeenCalled();
 
     // Recovered: no further attempts.
@@ -409,13 +415,15 @@ describe("hls.js stall recovery after a sustained rejection", () => {
     // startLoad() does nothing before hls.js has levels, so every attempt reloads the manifest
     // with the newest token: at 0, 2, 6, 14 and 30 s; the one at 30 s parses and loads.
     expect(reloads.map((item) => item.at - start)).toEqual([0, 0, 2_000, 6_000, 14_000, 30_000]);
-    expect(reloads[0]!.url).toBe(firstUrl);
-    expect(reloads.slice(1).every((item) => item.url === "https://videodelivery.net/r1.bbb.ccc/manifest/video.m3u8")).toBe(true);
+    const r1 = "https://videodelivery.net/r1.bbb.ccc/manifest/video.m3u8";
+    const r2 = "https://videodelivery.net/r2.bbb.ccc/manifest/video.m3u8";
+    expect(reloads.map((item) => item.url)).toEqual([firstUrl, r1, r1, r1, r2, r2]);
     expect(starts).toHaveLength(0);
-    expect(fetches.map((at) => at - start)).toEqual([0]);
-    // Each reload reset the element; playback resumes because the viewer's intent is still play.
+    expect(fetches.map((at) => at - start)).toEqual([0, 14_000]);
+    // Only the reloads with a new URL (0 and 14 s) reset the element; playback resumes each time
+    // because the viewer's intent is still play.
     expect(video.paused).toBe(false);
-    expect(video.play).toHaveBeenCalledTimes(5);
+    expect(video.play).toHaveBeenCalledTimes(2);
     expect(consumeSourceSwapPlay(video)).toBe(true);
 
     await vi.advanceTimersByTimeAsync(10 * 60_000);
@@ -427,24 +435,64 @@ describe("hls.js stall recovery after a sustained rejection", () => {
     await vi.advanceTimersByTimeAsync(6_000);
     cdn.blocked = false;
     await vi.advanceTimersByTimeAsync(8_000);
+    // Resets at 0 s (first URL to r1) and 14 s (r1 to r2) each fired a pause; the viewer's intent stays play.
     expect(reloads).toHaveLength(5);
-    expect(video.play).toHaveBeenCalledTimes(4);
+    expect(video.play).toHaveBeenCalledTimes(2);
     expect(video.paused).toBe(false);
+  });
+
+  it("keeps a viewer pause made during the stall when the reload fired no pause event", async () => {
+    const { video, reloads, cdn } = await stalledPlayer({ currentTime: 0, paused: false, blockedFromOpen: true });
+    expect(video.play).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    video.paused = true;
+    video.fire("pause");
+    cdn.blocked = false;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(reloads).toHaveLength(3);
+    expect(video.play).toHaveBeenCalledTimes(1);
+    expect(video.paused).toBe(true);
+  });
+
+  it("does not let an older play() aborted by a later reload clear the newer resume's mark", async () => {
+    const { video, reloads } = await stalledPlayer({ currentTime: 0, paused: false, blockedFromOpen: true });
+    consumeSourceSwapPlay(video);
+    video.play.mockClear();
+    const pending: Array<(reason: Error) => void> = [];
+    video.play.mockImplementation(() => {
+      video.paused = false;
+      // The reload that led to this play() aborted the previous pending one.
+      for (const reject of pending.splice(0)) reject(new Error("AbortError"));
+      void Promise.resolve().then(() => video.fire("play"));
+      return new Promise<void>((_resolve, reject) => { pending.push(reject); });
+    });
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(video.play).toHaveBeenCalledTimes(1);
+    expect(consumeSourceSwapPlay(video)).toBe(true);
+
+    // 90 s: the third renewal resets the element again; its play() aborts the one from 14 s.
+    await vi.advanceTimersByTimeAsync(76_000);
+    expect(reloads.at(-1)!.url).toBe("https://videodelivery.net/r3.bbb.ccc/manifest/video.m3u8");
+    expect(video.play).toHaveBeenCalledTimes(2);
+    expect(consumeSourceSwapPlay(video)).toBe(true);
   });
 
   it("clears the source-swap mark when its own play() is refused, and still hears the viewer's next play", async () => {
     const { video, reloads } = await stalledPlayer({ currentTime: 0, paused: false, blockedFromOpen: true });
     expect(consumeSourceSwapPlay(video)).toBe(true);
+    video.play.mockClear();
     video.play.mockImplementation(() => Promise.reject(new Error("NotAllowedError")));
-    await vi.advanceTimersByTimeAsync(2_000);
-    expect(reloads).toHaveLength(3);
+    // 14 s: the renewed URL resets the element and the refused play() fires no play event.
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(reloads).toHaveLength(5);
+    expect(video.play).toHaveBeenCalledTimes(1);
     expect(consumeSourceSwapPlay(video)).toBe(false);
 
     await vi.advanceTimersByTimeAsync(1_500);
     video.paused = false;
     video.fire("play");
     await settle();
-    expect(reloads).toHaveLength(4);
+    expect(reloads).toHaveLength(6);
   });
 
   it("does not count its own play() after a slow renewal as a viewer retry", async () => {
@@ -456,15 +504,62 @@ describe("hls.js stall recovery after a sustained rejection", () => {
     expect(fetches).toHaveLength(1);
   });
 
-  it("renews again once the stall's token is past half its lifetime", async () => {
-    const { hls, fetches, starts } = await stalledPlayer({ currentTime: 100, paused: false, tokenSeconds: 300 });
+  it("reuses a long token for at most 2 minutes before renewing again", async () => {
+    const { video, visibility, hls, fetches, starts } = await stalledPlayer({ currentTime: 100, paused: true, tokenSeconds: 7_200 });
     const start = Date.now();
     hls.emit(forbidden);
     await settle();
-    await vi.advanceTimersByTimeAsync(200_000);
-    // Attempts at 0, 2, 6, 14, 30, 60, 90, 120, 150, 180 s; only 0 s and 150 s (half of 300 s) renew.
-    expect(starts.map((item) => item.at - start)).toEqual([0, 2_000, 6_000, 14_000, 30_000, 60_000, 90_000, 120_000, 150_000, 180_000]);
-    expect(fetches.map((at) => at - start)).toEqual([0, 150_000]);
+    expect(fetches).toHaveLength(1);
+    // The paused player goes to a background tab, so the backoff waits for it to show.
+    visibility.hidden = true;
+    await vi.advanceTimersByTimeAsync(60_000);
+    visibility.hidden = false;
+    visibility.fire();
+    await settle();
+    expect(starts.map((item) => item.at - start)).toEqual([0, 60_000]);
+    expect(fetches).toHaveLength(1);
+
+    visibility.hidden = true;
+    await vi.advanceTimersByTimeAsync(120_000);
+    visibility.hidden = false;
+    visibility.fire();
+    await settle();
+    // 180 s after the renewal: past the 2 minute reuse window though the token lasts 2 hours.
+    expect(starts.map((item) => item.at - start)).toEqual([0, 60_000, 180_000]);
+    expect(fetches.map((at) => at - start)).toEqual([0, 180_000]);
+    expect(video.play).not.toHaveBeenCalled();
+  });
+
+  it("stops loading with the stall's token once it expired and renewals keep failing", async () => {
+    const { hls, starts, fetches } = await stalledPlayer({ currentTime: 100, paused: false, tokenSeconds: 60, successfulRenewals: 1 });
+    const start = Date.now();
+    hls.emit(forbidden);
+    await settle();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    // The 60 s token renewed at 0 s is still used at 30 s; from 60 s on it has expired.
+    expect(starts.map((item) => item.at - start)).toEqual([0, 2_000, 6_000, 14_000, 30_000]);
+    expect(fetches.length).toBeGreaterThan(5);
+  });
+
+  it("calls play() once through failed startLoad attempts and resumes at the stopped position", async () => {
+    const { video, hls, starts, cdn } = await stalledPlayer({ currentTime: 100, paused: false });
+    hls.emit(forbidden);
+    await settle();
+    // The element reports paused without a pause event: the state the existing test
+    // "resumes a video that the expired token paused" covers. The viewer's intent is still play.
+    await vi.advanceTimersByTimeAsync(3_000);
+    video.paused = true;
+    video.currentTime = 112;
+    await vi.advanceTimersByTimeAsync(17_000);
+    expect(starts).toHaveLength(4);
+    expect(video.play).toHaveBeenCalledTimes(1);
+
+    cdn.blocked = false;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(starts).toHaveLength(5);
+    expect(starts.slice(2).every((item) => item.position === 112)).toBe(true);
+    expect(video.play).toHaveBeenCalledTimes(1);
+    expect(consumeSourceSwapPlay(video)).toBe(true);
   });
 
   it("keeps a paused video paused at its position, and loads at once when the viewer presses play", async () => {
@@ -529,8 +624,10 @@ describe("hls.js stall recovery after a sustained rejection", () => {
     const gaps = starts.slice(1).map((item, index) => item.at - starts[index]!.at);
     expect(Math.max(...gaps)).toBe(HLS_STALL_RETRY_MAX_MS);
     expect(Math.min(...gaps)).toBe(2_000);
-    // One renewal for the whole stall: the 30 minute token stays more than half valid.
-    expect(fetches.map((at) => at - start)).toEqual([0]);
+    // One renewal per three failed attempts on the same token, at least 5 s apart.
+    expect(fetches).toHaveLength(7);
+    expect(fetches[0]! - start).toBe(0);
+    expect(Math.min(...fetches.slice(1).map((at, index) => at - fetches[index]!))).toBeGreaterThanOrEqual(5_000);
 
     // Then quiet for an hour, apart from one restart per scheduled renewal (every 28 minutes).
     const exhausted = starts.length;

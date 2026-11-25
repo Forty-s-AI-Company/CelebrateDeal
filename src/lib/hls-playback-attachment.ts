@@ -59,6 +59,13 @@ export const HLS_STALL_MAX_AUTO_ATTEMPTS = 20;
 export const HLS_STALL_BACKOFF_RESET_MS = 60_000;
 /** A retry from a viewer play or the tab showing waits at least this long after the previous attempt. */
 export const HLS_STALL_MANUAL_MIN_GAP_MS = 1_000;
+/**
+ * A token renewed during a stall is reused without renewing again for at most half its
+ * lifetime, capped at this (preview and promo tokens last up to 4 hours).
+ */
+export const HLS_STALL_TOKEN_REUSE_MAX_MS = 120_000;
+/** Failed attempts on the same renewed token after which the next attempt renews anyway. */
+export const HLS_STALL_TOKEN_REUSE_MAX_FAILURES = 3;
 
 /**
  * Delay before recovery attempt number `level` of a stall: 0 for the first one, then
@@ -126,8 +133,9 @@ type HlsStall = {
  * renewal. While stalled, recovery is retried with a jittered backoff
  * (at once, then 2, 4, 8, 16 and every 30 s, at most 20 automatic attempts per
  * stall). After a 401／403 an attempt first renews (limited by the renewal's
- * own minimum interval) unless this stall already got a token that still has
- * more than half its lifetime left. It then calls `startLoad` at the current
+ * own minimum interval) unless this stall already got a token that is still
+ * fresh (renewed less than min(half its lifetime, 2 min) ago and failed fewer
+ * than 3 attempts); an expired one is never used. It then calls `startLoad` at the current
  * position, or `loadSource` when the manifest itself never loaded (`startLoad`
  * does nothing before hls.js has levels). A paused player in a hidden tab waits
  * for the tab to show; a viewer play, the tab showing again or a renewed token
@@ -170,8 +178,12 @@ export function attachHlsPlayback({
   let lastStallEndedAt = Number.NEGATIVE_INFINITY;
   let lastAttemptAt = Number.NEGATIVE_INFINITY;
   let lastSourceAppliedAt = Number.NEGATIVE_INFINITY;
-  // Until then the applied token still has more than half of its lifetime left.
-  let appliedTokenHalfLifeAt = Number.NEGATIVE_INFINITY;
+  // Until then an attempt may reuse the applied token instead of renewing (see HLS_STALL_TOKEN_REUSE_MAX_MS).
+  let appliedTokenReuseUntil = Number.NEGATIVE_INFINITY;
+  // The applied token's own expiry; after it the token is useless even without a renewal.
+  let appliedTokenExpiresAt = Number.POSITIVE_INFINITY;
+  // Recovery attempts that loaded with the applied token (each further attempt means it failed).
+  let attemptsOnAppliedToken = 0;
   let fetchedLifetimeMs: number | null = null;
   let manifestParsed = false;
   let manifestLoadErrors: ReadonlySet<string> = new Set([MANIFEST_LOAD_ERROR, MANIFEST_LOAD_TIMEOUT]);
@@ -179,7 +191,9 @@ export function attachHlsPlayback({
   // alone cannot tell a stall from a pause whose event is still queued.
   let viewerWantsPlay = !video.paused;
   let selfPlayPending = false;
+  let selfPlayTicket = 0;
   let selfPauseExpected = false;
+  let selfPauseTimer: unknown = null;
 
   const trackedFetchSource = async () => {
     const next = await fetchSource();
@@ -200,7 +214,11 @@ export function attachHlsPlayback({
         const changed = nextUrl !== currentUrl;
         currentUrl = nextUrl;
         lastSourceAppliedAt = now();
-        appliedTokenHalfLifeAt = fetchedLifetimeMs === null ? lastSourceAppliedAt : lastSourceAppliedAt + fetchedLifetimeMs / 2;
+        appliedTokenReuseUntil = fetchedLifetimeMs === null
+          ? lastSourceAppliedAt
+          : lastSourceAppliedAt + Math.min(fetchedLifetimeMs / 2, HLS_STALL_TOKEN_REUSE_MAX_MS);
+        appliedTokenExpiresAt = fetchedLifetimeMs === null ? Number.POSITIVE_INFINITY : lastSourceAppliedAt + fetchedLifetimeMs;
+        attemptsOnAppliedToken = 0;
         if (native) {
           // Native HLS needs a new src; after a media error it reloads even for the same URL.
           if (changed || nativeReloadPending) {
@@ -241,12 +259,38 @@ export function attachHlsPlayback({
 
   function resumeIfViewerWantsPlay() {
     if (!viewerWantsPlay || !video.paused) return;
+    const ticket = ++selfPlayTicket;
     selfPlayPending = true;
     markSourceSwapPlay(video);
     void video.play()?.catch(() => {
+      // Only the latest resume whose play event has not fired yet owns the mark: an older
+      // play() rejected (AbortError) by a later reload must not clear the newer one's mark.
+      if (ticket !== selfPlayTicket || !selfPlayPending) return;
       selfPlayPending = false;
       consumeSourceSwapPlay(video);
     });
+  }
+
+  function clearSelfPauseExpectation() {
+    selfPauseExpected = false;
+    if (selfPauseTimer !== null) timers.clearTimeout(selfPauseTimer);
+    selfPauseTimer = null;
+  }
+
+  function reloadManifest(target: HlsPlayer) {
+    const wasPaused = video.paused;
+    target.loadSource(currentUrl);
+    // A reload that re-creates the MediaSource pauses the element (HTML load algorithm); some
+    // engines also queue a pause event for it, which is not the viewer's. Only when the element
+    // really flipped to paused here, and only until the next task: a real pause afterwards counts.
+    if (!wasPaused && video.paused) {
+      clearSelfPauseExpectation();
+      selfPauseExpected = true;
+      selfPauseTimer = timers.setTimeout(() => {
+        selfPauseTimer = null;
+        selfPauseExpected = false;
+      }, 0);
+    }
   }
 
   async function attemptRecovery(renew: boolean) {
@@ -260,17 +304,23 @@ export function attachHlsPlayback({
     current.waitingForVisibility = false;
     current.attempting = true;
     backoffLevel += 1;
-    const tokenFromThisStall = () => lastSourceAppliedAt >= current.startedAt;
+    // A token renewed during this stall and not yet expired (after the replay deadline the
+    // renewals fail and the last token lapses: stop loading with it).
+    const stallTokenValid = () => lastSourceAppliedAt >= current.startedAt && now() < appliedTokenExpiresAt;
+    // Reuse it without renewing while it is fresh and has not failed repeatedly (a bad fresh
+    // token, e.g. during a key rotation, is replaced after a few attempts).
+    const reuseStallToken = stallTokenValid() && now() < appliedTokenReuseUntil
+      && attemptsOnAppliedToken < HLS_STALL_TOKEN_REUSE_MAX_FAILURES;
     let usable = true;
     try {
-      if (renew && current.authError && renewal && !(tokenFromThisStall() && now() < appliedTokenHalfLifeAt)) {
+      if (renew && current.authError && renewal && !reuseStallToken) {
         const renewed = await renewal.renewNow();
-        // A refused or rate-limited renewal still leaves a usable token when one arrived
+        // A refused or rate-limited renewal still leaves a usable token when a valid one arrived
         // during this stall; otherwise restarting would only meet the same 401／403.
-        usable = renewed !== null || tokenFromThisStall();
+        usable = renewed !== null || stallTokenValid();
       }
     } catch {
-      usable = tokenFromThisStall();
+      usable = stallTokenValid();
     } finally {
       current.attempting = false;
       // Measured from the end, so a slow renewal does not shorten the gap before a viewer retry.
@@ -281,12 +331,11 @@ export function attachHlsPlayback({
       scheduleAttempt();
       return;
     }
+    attemptsOnAppliedToken += 1;
     if (!manifestParsed || current.manifestError) {
       // Before hls.js has levels startLoad() only flags a later start; the manifest must be
-      // requested again. The element is reset (nothing has played yet), so a pause event
-      // the reset may fire is not the viewer's.
-      if (!video.paused) selfPauseExpected = true;
-      player.loadSource(currentUrl);
+      // requested again (nothing has played yet, so the position is 0 anyway).
+      reloadManifest(player);
     } else {
       // No loadSource() here: it re-attaches the media and resets the position to 0.
       player.startLoad(Number.isFinite(video.currentTime) ? video.currentTime : 0);
@@ -331,7 +380,6 @@ export function attachHlsPlayback({
   };
 
   const onFragLoaded = () => {
-    selfPauseExpected = false;
     if (!stall) return;
     clearStallTimer();
     stall = null;
@@ -361,7 +409,7 @@ export function attachHlsPlayback({
   };
   const onPause = () => {
     if (selfPauseExpected) {
-      selfPauseExpected = false;
+      clearSelfPauseExpectation();
       return;
     }
     // A viewer pause during a stall must not be undone by a later attempt.
@@ -426,6 +474,7 @@ export function attachHlsPlayback({
     disposed = true;
     renewal?.stop();
     clearStallTimer();
+    clearSelfPauseExpectation();
     stall = null;
     cancelNativeSwap?.();
     player?.destroy();
