@@ -1142,11 +1142,20 @@ function playbackVideoClass(isCheckoutOverlay: boolean) {
   return `${isCheckoutOverlay ? "pointer-events-none " : ""}h-full w-full object-cover`;
 }
 
-function playbackMediaProps(source: LivePlaybackSource | null, url: string | null, isCheckoutOverlay: boolean) {
+/**
+ * The element's declarative `src`. An HLS manifest is never rendered as `src`: attachHlsPlayback
+ * (useHlsPlayback) owns it, preferring hls.js and setting the native `src` itself only on the
+ * Safari/iOS fallback. A declarative m3u8 `src` made Chromium request the manifest as media
+ * (it cannot play it) and then hls.js fetched it again, and React would re-apply every renewed
+ * token URL to the attribute. The value depends only on props, so server and client markup agree.
+ * Trade-off: with JavaScript disabled an HLS video has no source (the live page needs JS for
+ * admission, chat and checkout anyway); plain files (mp4) keep their `src`.
+ */
+export function playbackMediaProps(source: LivePlaybackSource | null, url: string | null, isCheckoutOverlay: boolean) {
   const browser = source?.protocol === "whep";
   return {
     className: `${playbackVideoClass(isCheckoutOverlay)} ${browser ? "object-contain" : ""}`,
-    src: browser ? undefined : url ?? undefined,
+    src: browser || shouldUseHls(source, url) ? undefined : url ?? undefined,
   };
 }
 
