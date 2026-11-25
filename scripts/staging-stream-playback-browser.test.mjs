@@ -361,7 +361,10 @@ test("a bare load URL report is benign only in the WebKit viewer during the runn
   const segment = { name: "https", message: `/videodelivery.net/${uid}/video/64/seg_161.mp4?p=x&s=y`, stack: "x\n    at send (https://h/_next/static/immutable/chunks/3cwmmhv6f5k9b.js:29:124403)" };
   const poll = { name: "https", message: `/${ALIAS}/api/live-updates?vendorId=a&liveId=b`, stack: "" };
   const during = { viewerBrowser: "webkit", actor: "viewer", duringNavigation: true };
-  for (const error of [segment, poll]) {
+  const suffix = " due to access control checks.";
+  const segmentAcc = { ...segment, message: segment.message + suffix };
+  const pollAcc = { ...poll, message: poll.message + suffix };
+  for (const error of [segment, poll, segmentAcc, pollAcc]) {
     const described = describePageError(error, during);
     assert.equal(described.category, "WEBKIT_LOAD_CANCELLED_BY_RUNNER_NAVIGATION");
     assert.equal(isBenignPageError(described), true);
@@ -380,6 +383,9 @@ test("a bare load URL report is benign only in the WebKit viewer during the runn
     `/videodelivery.net/${uid}/thumbnails/thumbnail.jpg`,
     `/videodelivery.net/${uid}/video/1/seg_1.mp4 and then a TypeError`,
     "/example.com/api/live-updates",
+    `/${ALIAS}/api/live-admission due to access control checks.`,
+    `/videodelivery.net/${uid}/video/1/seg_1.mp4 due to access control checks. TypeError`,
+    `/videodelivery.net/${uid}/video/1/seg_1.mp4 blocked due to access control checks.`,
   ]) {
     const described = describePageError({ name: "https", message, stack: "" }, during);
     assert.equal(isBenignPageError(described), false, message);
