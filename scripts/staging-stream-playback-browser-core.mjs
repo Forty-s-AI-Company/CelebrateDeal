@@ -164,8 +164,10 @@ export const STREAM_PATTERN_LIMIT = 25;
 
 /**
  * Bounded per-shape tally of viewer Stream requests: `{ phase, origin, form, kind, resourceType,
- * pattern, requests, ok, failed }`. `outcome` is "request", "ok" (2xx/3xx) or "failed"
- * (4xx/5xx or a network failure). Shapes beyond the limit fold into one OVERFLOW entry.
+ * pattern, requests, ok, failed, aborted, injected }`. `outcome` is "request", "ok" (2xx/3xx),
+ * "failed" (4xx/5xx or a network error), "aborted" (cancelled by the browser or the player, e.g.
+ * a native load replaced by hls.js) or "injected" (a 403 the runner itself served in RECOVERY).
+ * Shapes beyond the limit fold into one OVERFLOW entry.
  */
 export function tallyStreamRequest(list, { phase, url, resourceType }, outcome) {
   const parsed = classifyStreamUrl(url);
@@ -183,19 +185,92 @@ export function tallyStreamRequest(list, { phase, url, resourceType }, outcome) 
     if (list.length >= STREAM_PATTERN_LIMIT - 1) {
       target = list.find((item) => item.pattern === "OVERFLOW");
       if (!target) {
-        target = { phase: "OTHER", origin: "MIXED", form: "MIXED", kind: "MIXED", resourceType: "other", pattern: "OVERFLOW", requests: 0, ok: 0, failed: 0 };
+        target = { phase: "OTHER", origin: "MIXED", form: "MIXED", kind: "MIXED", resourceType: "other", pattern: "OVERFLOW", requests: 0, ok: 0, failed: 0, aborted: 0, injected: 0 };
         list.push(target);
       }
     } else {
-      target = { ...entry, requests: 0, ok: 0, failed: 0 };
+      target = { ...entry, requests: 0, ok: 0, failed: 0, aborted: 0, injected: 0 };
       list.push(target);
     }
   }
   if (outcome === "request") target.requests += 1;
   else if (outcome === "ok") target.ok += 1;
+  else if (outcome === "aborted") target.aborted += 1;
+  else if (outcome === "injected") target.injected += 1;
   else target.failed += 1;
   return { ...entry, parsed };
 }
+
+/**
+ * Playwright's requestfailed `errorText`: a cancellation by the browser or the page (Chromium
+ * net::ERR_ABORTED, WebKit "cancelled" / "Load request cancelled", Firefox NS_BINDING_ABORTED)
+ * is ABORTED, not a delivery failure; anything else (HTTP is not reported here) stays FAILED.
+ */
+export function classifyRequestFailure(errorText) {
+  if (typeof errorText !== "string") return "FAILED";
+  return /net::ERR_ABORTED|NS_BINDING_ABORTED|^cancelled$|Load request cancelled|Request cancelled/iu.test(errorText.trim())
+    ? "ABORTED" : "FAILED";
+}
+
+/** Strip anything identifying from free text before it may enter the receipt. */
+function sanitizeText(value, max) {
+  return String(value ?? "")
+    .replace(/[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/gu, "<url>")
+    .replace(/[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/gu, "<token>")
+    .replace(/[^\s@]+@[^\s@]+/gu, "<email>")
+    .replace(/[0-9a-f]{12,}/giu, "<hex>")
+    .replace(/bearer(?:\s+\S+)?/giu, "<bearer>")
+    .replace(/customer-[a-z0-9]+/giu, "<customer>")
+    .replace(/[^\p{L}\p{N} .,:;()'"_<>/\-[\]?!=#]/gu, "?")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, max);
+}
+
+/** Top stack frame as `file:line:col` (bundle file name only, never the URL or its query). */
+function topFrame(stack) {
+  for (const line of String(stack ?? "").split("\n").slice(0, 12)) {
+    const match = /([^/\s()@?#]+\.(?:m?js|tsx?))(?:\?[^\s:)]*)?:(\d{1,7}):(\d{1,7})/u.exec(line);
+    if (!match) continue;
+    const file = /^[A-Za-z0-9._~-]{1,80}$/u.test(match[1]) && !/[0-9a-f]{32}/iu.test(match[1]) ? match[1] : "<file>";
+    return `${file}:${match[2]}:${match[3]}`;
+  }
+  return "NONE";
+}
+
+/**
+ * A page error reduced to fixed, redacted fields `{ name, message, frame, category,
+ * unhandledRejection }`. WebKit reports unhandled rejections as
+ * "Unhandled Promise Rejection: <Name>: <message>".
+ */
+export function describePageError(error) {
+  const raw = String(error?.message ?? error ?? "");
+  const unhandledRejection = raw.startsWith("Unhandled Promise Rejection: ");
+  const body = unhandledRejection ? raw.slice("Unhandled Promise Rejection: ".length) : raw;
+  const named = /^([A-Z][A-Za-z]{0,39}(?:Error|Exception)): ([\s\S]*)$/u.exec(body);
+  const rawName = named ? named[1] : String(error?.name ?? "Error");
+  const name = /^[A-Za-z]{1,40}$/u.test(rawName) ? rawName : "Error";
+  const message = sanitizeText(named ? named[2] : body, 160);
+  let category = "OTHER";
+  // WebKit's generic "The operation was aborted." is also what an aborted fetch rejects with, so
+  // only a message that names play() is treated as an interrupted media play.
+  if (name === "AbortError" && /play\(\)/u.test(message)) category = "MEDIA_PLAY_INTERRUPTED";
+  else if (name === "AbortError") category = "ABORT";
+  else if (/Load failed|Failed to fetch|NetworkError/u.test(message)) category = "NETWORK";
+  return { name, message, frame: topFrame(error?.stack), category, unhandledRejection };
+}
+
+/**
+ * Only an interrupted media play() is benign: a later load()/src change or pause() rejects the
+ * pending play() promise with AbortError ("The play() request was interrupted by ..."). It says
+ * nothing about playback health; every other page error (including any other AbortError, such as
+ * an aborted fetch) still blocks the run.
+ */
+export function isBenignPageError(described) {
+  return described?.category === "MEDIA_PLAY_INTERRUPTED";
+}
+
+export const PAGE_ERROR_DETAIL_LIMIT = 10;
 
 /** Same Stream URL with a deliberately broken signature (no signing work; for the Origin probe). */
 export function withCorruptedSignature(value) {
@@ -436,7 +511,7 @@ export function createReceipt(env = {}) {
       liveRenewal: "NOT_COVERED", liveRenewalReason: "NO_SYNTHETIC_LIVE_INPUT_PUBLISHER_IN_STAGING_TOOLING",
       livePreviewPlayer: "NOT_COVERED", livePreviewReason: "PREVIEW_PLAYER_ONLY_FOR_EVERGREEN_LIVE_WITH_PREVIEW",
     },
-    pageErrors: 0, blockedWrites: 0, blockedExternal: 0, suppressedTelemetry: 0, suppressedAnalytics: 0,
+    pageErrors: 0, benignPageErrors: 0, pageErrorDetails: [], blockedWrites: 0, blockedExternal: 0, suppressedTelemetry: 0, suppressedAnalytics: 0,
     sideEffects: {
       ownerSessionsIssued: 0, ownerSessionsRevoked: 0, videoUploads: 0, formCreates: 0, templateCreates: 0,
       scriptCreates: 0, liveCreates: 0, videoSaves: 0, paymentSubmissions: 0, formSubmissions: 0, emails: 0,
@@ -461,6 +536,8 @@ export function finalVerdict(receipt) {
   if (receipt.sideEffects.paymentSubmissions > 0) return { result: "BLOCKED", reason: "PAYMENT_ATTEMPTED" };
   if (receipt.blockedWrites > 0) return { result: "BLOCKED", reason: "UNEXPECTED_WRITE_BLOCKED" };
   if (receipt.pageErrors > 0) return { result: "BLOCKED", reason: "PAGE_ERRORS" };
+  // Genuine Stream delivery failures anywhere (aborts and the runner's own 403s are not counted).
+  if (receipt.viewer.providerRequestFailures > 0) return { result: "BLOCKED", reason: "PROVIDER_STREAM_REQUESTS_FAILED" };
   if (receipt.sideEffects.ownerSessionsIssued !== receipt.sideEffects.ownerSessionsRevoked) {
     return { result: "BLOCKED", reason: "OWNER_SESSION_NOT_REVOKED" };
   }
@@ -490,7 +567,9 @@ export function formatReceiptLines(receipt) {
     `stream_playback_result=${receipt.result} reason=${receipt.reason} browser=${receipt.viewerBrowser} scenario=${receipt.scenario}`,
     `stream_playback_steps=${steps}`,
     `stream_playback_viewer=token_form:${yes(receipt.viewer.tokenFormPlayback)} uid_form_requests:${receipt.viewer.uidFormStreamRequests} player:${receipt.viewer.playerPath} exp_checks:${receipt.viewer.tokenExpChecks} exp_mismatches:${receipt.viewer.tokenExpMismatches} deadline_capped_matches:${receipt.viewer.deadlineCappedMatches}/${receipt.viewer.deadlineCappedChecks}`,
-    `stream_playback_requests=app_uid:${receipt.viewer.appUidFormStreamRequests} provider_uid:${receipt.viewer.providerUidFormStreamRequests} provider_failures:${receipt.viewer.providerRequestFailures} ${(receipt.viewer.streamRequestPatterns ?? []).map((item) => `${item.phase}/${item.origin}/${item.form}/${item.kind}/${item.resourceType}:${item.pattern}=${item.requests}(ok:${item.ok},failed:${item.failed})`).join(" ") || "NONE"}`,
+    `stream_playback_requests=app_uid:${receipt.viewer.appUidFormStreamRequests} provider_uid:${receipt.viewer.providerUidFormStreamRequests} provider_failures:${receipt.viewer.providerRequestFailures} ${(receipt.viewer.streamRequestPatterns ?? []).map((item) => `${item.phase}/${item.origin}/${item.form}/${item.kind}/${item.resourceType}:${item.pattern}=${item.requests}(ok:${item.ok},failed:${item.failed},aborted:${item.aborted ?? 0},injected:${item.injected ?? 0})`).join(" ") || "NONE"}`,
+    // Redacted messages stay in the JSON receipt (pageErrorDetails); the line keeps the fixed fields.
+    `stream_playback_errors=page:${receipt.pageErrors} benign:${receipt.benignPageErrors ?? 0} ${(receipt.pageErrorDetails ?? []).map((item) => `${item.actor}/${item.phase}/${item.category}/${item.name}@${item.frame}${item.benign ? "(benign)" : ""}`).join(" ") || "NONE"}`,
     `stream_playback_renewal=status:${renewal.status ?? "NOT_RUN"} after_s:${renewal.observedAfterSeconds ?? "null"} expected_s:${renewal.expectedAfterSeconds ?? "null"} new_token_requests:${renewal.newTokenStreamRequests ?? "null"} renewed_exp_equals_deadline:${yes(renewal.renewedExpEqualsDeadline ?? null)} max_stall_s:${renewal.progress?.maxStallSeconds ?? "null"}`,
     `stream_playback_recovery=${receipt.recovery.length ? receipt.recovery.map((item) => `${item.mode}/${item.state}:${item.status}${item.reasons?.length ? `(${item.reasons.join("+")})` : ""}`).join(" ") : "NOT_RUN"}`,
     `stream_playback_origin=status:${origin.status ?? "NOT_RUN"} app:${origin.appOrigin ?? "null"} none:${origin.noOrigin ?? "null"} foreign:${origin.foreignOrigin ?? "null"} invalid_token:${origin.invalidToken ?? "null"} invalid_token_cors_readable:${yes(origin.invalidTokenCorsReadable ?? null)}`,

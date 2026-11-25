@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   ALIAS, FIXTURE, ORIGIN, STEPS, STREAM_PATTERN_LIMIT,
-  assessPlaybackProgress, redactStreamPath, streamRequestOrigin, tallyStreamRequest, assessRecovery, assessReplayTokenExp, classifyPlayerPath, classifyRequest,
+  assessPlaybackProgress, classifyRequestFailure, describePageError, isBenignPageError, redactStreamPath, streamRequestOrigin, tallyStreamRequest, assessRecovery, assessReplayTokenExp, classifyPlayerPath, classifyRequest,
   classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims, finalVerdict,
   formatReceiptLines, receiptLeaks, redactStreamUrl, renewalDelaySeconds, replayDeadline,
   replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor, taipeiDateTimeLocal,
@@ -79,11 +79,13 @@ test("stream request tally is bounded, keeps counts per shape and phase, and ski
   tallyStreamRequest(list, { phase: "VIEWER_START", url: seg(1), resourceType: "xhr" }, "request");
   tallyStreamRequest(list, { phase: "VIEWER_START", url: seg(2), resourceType: "xhr" }, "request");
   tallyStreamRequest(list, { phase: "VIEWER_START", url: seg(2), resourceType: "xhr" }, "ok");
+  tallyStreamRequest(list, { phase: "VIEWER_START", url: seg(2), resourceType: "xhr" }, "aborted");
   tallyStreamRequest(list, { phase: "RENEWAL", url: seg(3), resourceType: "xhr" }, "failed");
+  tallyStreamRequest(list, { phase: "RENEWAL", url: seg(4), resourceType: "xhr" }, "injected");
   assert.equal(tallyStreamRequest(list, { phase: "VIEWER_START", url: `https://videodelivery.net/${uid}/thumbnails/thumbnail.jpg`, resourceType: "image" }, "request"), null);
   assert.deepEqual(list, [
-    { phase: "VIEWER_START", origin: "PROVIDER", form: "UID", kind: "SEGMENT", resourceType: "xhr", pattern: "videodelivery:/<uid>/video/<n>/seg_<n>.ts", requests: 2, ok: 1, failed: 0 },
-    { phase: "RENEWAL", origin: "PROVIDER", form: "UID", kind: "SEGMENT", resourceType: "xhr", pattern: "videodelivery:/<uid>/video/<n>/seg_<n>.ts", requests: 0, ok: 0, failed: 1 },
+    { phase: "VIEWER_START", origin: "PROVIDER", form: "UID", kind: "SEGMENT", resourceType: "xhr", pattern: "videodelivery:/<uid>/video/<n>/seg_<n>.ts", requests: 2, ok: 1, failed: 0, aborted: 1, injected: 0 },
+    { phase: "RENEWAL", origin: "PROVIDER", form: "UID", kind: "SEGMENT", resourceType: "xhr", pattern: "videodelivery:/<uid>/video/<n>/seg_<n>.ts", requests: 0, ok: 0, failed: 1, aborted: 0, injected: 1 },
   ]);
   const crowded = [];
   for (let index = 0; index < STREAM_PATTERN_LIMIT + 10; index += 1) {
@@ -283,14 +285,67 @@ test("receipt leak guard catches tokens, uids, URLs, customer hosts and bearer v
   assert.equal(safe.lines.includes("stream_playback_result=BLOCKED"), true);
 });
 
+test("a cancelled request is an abort, not a delivery failure; anything else stays a failure", () => {
+  for (const text of ["net::ERR_ABORTED", "cancelled", "Load request cancelled", "NS_BINDING_ABORTED"]) {
+    assert.equal(classifyRequestFailure(text), "ABORTED", text);
+  }
+  for (const text of ["net::ERR_CONNECTION_RESET", "net::ERR_FAILED", "net::ERR_TIMED_OUT", "Could not connect to the server.", "", null, undefined]) {
+    assert.equal(classifyRequestFailure(text), "FAILED", String(text));
+  }
+});
+
+test("page errors are reduced to redacted fields; only an interrupted play() is benign", () => {
+  const token = classifyStreamUrl(signedManifest).token;
+  const leaky = describePageError({
+    name: "TypeError",
+    message: `Cannot read properties of undefined (reading 'x') at ${signedManifest} for owner@example.com id ${uid} Bearer abc ${token}`,
+    stack: `TypeError: boom\n    at f (https://${ALIAS}/_next/static/chunks/app/live/page-0a1b2c3d4e5f6071.js?dpl=dpl_x:1:2345)\n    at g (https://${ALIAS}/x.js:9:9)`,
+  });
+  assert.equal(leaky.name, "TypeError");
+  assert.equal(leaky.category, "OTHER");
+  assert.equal(leaky.frame, "page-0a1b2c3d4e5f6071.js:1:2345");
+  assert.equal(receiptLeaks(JSON.stringify(leaky)), false);
+  for (const secret of [uid, token, "owner@example.com", ALIAS, "abc"]) assert.equal(leaky.message.includes(secret), false, secret);
+  assert.ok(leaky.message.length <= 160);
+
+  // WebKit reports an unhandled rejection as text with the error name inside it.
+  const webkitPlay = describePageError({ message: "Unhandled Promise Rejection: AbortError: The play() request was interrupted by a call to pause().", stack: "" });
+  assert.deepEqual(webkitPlay, { name: "AbortError", message: "The play() request was interrupted by a call to pause().", frame: "NONE", category: "MEDIA_PLAY_INTERRUPTED", unhandledRejection: true });
+  assert.equal(isBenignPageError(webkitPlay), true);
+  // A generic abort (an aborted fetch rejects the same way in WebKit) is not filtered.
+  const genericAbort = describePageError({ message: "Unhandled Promise Rejection: AbortError: The operation was aborted.", stack: "" });
+  assert.equal(genericAbort.category, "ABORT");
+  assert.equal(isBenignPageError(genericAbort), false);
+  assert.equal(describePageError({ name: "TypeError", message: "Load failed" }).category, "NETWORK");
+  assert.equal(isBenignPageError(describePageError({ name: "TypeError", message: "x is not a function" })), false);
+  assert.equal(describePageError("plain string").name, "Error");
+  assert.equal(describePageError({ name: "<script>", message: "x" }).name, "Error");
+});
+
+test("a genuine provider delivery failure blocks the verdict even when every step passed", () => {
+  const receipt = createReceipt(env);
+  for (const step of STEPS) setStep(receipt, step, "PASS", 1);
+  receipt.viewer.providerRequestFailures = 1;
+  assert.deepEqual(finalVerdict(receipt), { result: "BLOCKED", reason: "PROVIDER_STREAM_REQUESTS_FAILED" });
+  receipt.viewer.providerRequestFailures = 0;
+  receipt.benignPageErrors = 3;
+  assert.deepEqual(finalVerdict(receipt), { result: "PASS", reason: "NONE" });
+  receipt.pageErrors = 1;
+  assert.deepEqual(finalVerdict(receipt), { result: "BLOCKED", reason: "PAGE_ERRORS" });
+});
+
 test("receipt lines are single-line key=value records with fixed vocabulary", () => {
   const receipt = createReceipt(env);
   receipt.recovery.push({ mode: "token_expiry", state: "playing", status: "FAIL", reasons: ["NOT_RESUMED", "NOT_ADVANCING"] });
   receipt.origin = { status: "PASS", appOrigin: 200, noOrigin: 200, foreignOrigin: 403, invalidToken: 401, invalidTokenCorsReadable: false };
   tallyStreamRequest(receipt.viewer.streamRequestPatterns, { phase: "VIEWER_START", url: `https://videodelivery.net/${uid}/video/240/seg_12.ts?p=secret`, resourceType: "xhr" }, "request");
+  receipt.pageErrors = 1;
+  receipt.benignPageErrors = 1;
+  receipt.pageErrorDetails.push({ actor: "viewer", phase: "RECOVERY", benign: true, ...describePageError({ name: "AbortError", message: "The play() request was interrupted by a new load request.", stack: "" }) });
   const lines = formatReceiptLines(receipt).split("\n");
-  assert.equal(lines.length, 9);
-  assert.ok(lines.some((line) => line.startsWith("stream_playback_requests=app_uid:0 provider_uid:0 provider_failures:0 VIEWER_START/PROVIDER/UID/SEGMENT/xhr:videodelivery:/<uid>/video/<n>/seg_<n>.ts?keys=p=1(ok:0,failed:0)")));
+  assert.equal(lines.length, 10);
+  assert.ok(lines.some((line) => line.startsWith("stream_playback_requests=app_uid:0 provider_uid:0 provider_failures:0 VIEWER_START/PROVIDER/UID/SEGMENT/xhr:videodelivery:/<uid>/video/<n>/seg_<n>.ts?keys=p=1(ok:0,failed:0,aborted:0,injected:0)")));
+  assert.ok(lines.includes("stream_playback_errors=page:1 benign:1 viewer/RECOVERY/MEDIA_PLAY_INTERRUPTED/AbortError@NONE(benign)"));
   assert.equal(receiptLeaks(lines.join("\n")), false);
   for (const line of lines) assert.match(line, /^stream_playback_[a-z]+=\S/u);
   assert.ok(lines.some((line) => line.includes("token_expiry/playing:FAIL(NOT_RESUMED+NOT_ADVANCING)")));
