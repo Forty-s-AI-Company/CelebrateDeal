@@ -8,7 +8,7 @@ const workflow = yaml.load(fs.readFileSync(new URL("../.github/workflows/staging
 const job = workflow.jobs.bootstrap;
 const execution = job.steps.find(step => step.name === "Create or verify fixed synthetic account");
 test("finance bootstrap secrets remain protected and never enter dependency installation", () => {
-  assert.equal(job.environment, "Preview – celebrate-deal-staging");
+  assert.deepEqual(job.environment, { name: "Preview – celebrate-deal-staging", deployment: false });
   assert.match(job.if, /github.ref == 'refs\/heads\/master' && github.ref_protected/u);
   assert.equal(workflow.permissions.contents, "read");
   assert.equal(workflow.permissions.deployments, "read");

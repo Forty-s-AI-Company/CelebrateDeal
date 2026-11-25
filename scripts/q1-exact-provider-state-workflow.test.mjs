@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 const workflow = readFileSync('.github/workflows/q1-exact-provider-state.yml', 'utf8');
 test('only protected main can inject staging database and JOB into fixed readonly runner', () => {
   assert.match(workflow, /github.ref == 'refs\/heads\/master' && github.ref_protected/);
-  assert.match(workflow, /environment: Preview – celebrate-deal-staging/);
+  assert.match(workflow, /environment:\r?\n\s+name: Preview – celebrate-deal-staging\r?\n\s+deployment: false\r?\n/);
   assert.match(workflow, /STAGING_DATABASE_URL: \$\{\{ secrets.STAGING_DATABASE_URL \}\}/);
   assert.match(workflow, /JOB_SECRET: \$\{\{ secrets.JOB_SECRET \}\}/);
   assert.doesNotMatch(workflow, /PAYUNI_QA_FINANCE_PASSWORD|PAYUNI_SANDBOX_ONETIME_CARD_NO|secrets\.DATABASE_URL/);

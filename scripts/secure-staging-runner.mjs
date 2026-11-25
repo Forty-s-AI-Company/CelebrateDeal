@@ -14,13 +14,15 @@ const GITHUB_REPOSITORY = "Forty-s-AI-Company/CelebrateDeal";
 const GITHUB_ENVIRONMENT = "Preview – celebrate-deal-staging";
 // GitHub caps per_page at 100; with the page limit below this covers 1000 records per sha.
 const GITHUB_DEPLOYMENT_PAGE_SIZE = 100;
-const GITHUB_STATUS_PAGE_SIZE = 1;
+// Newest first. Enough to see past GitHub's leading `inactive` marker(s) to the status Vercel posted.
+const GITHUB_STATUS_PAGE_SIZE = 10;
 // Total GitHub reads: deployment list pages plus statuses reads of Vercel-created candidates.
 const GITHUB_READ_BUDGET = 20;
 // Hard stop on list pages, independent of the read budget, so pagination can never run unbounded.
 const GITHUB_DEPLOYMENT_PAGE_LIMIT = 10;
-// Every Actions job bound to the staging environment also records a GitHub deployment for the
-// same sha (creator is a user or github-actions[bot], status URL points at the Actions run).
+// Actions jobs bound to the staging environment used to record a GitHub deployment for the same
+// sha (creator is a user or github-actions[bot], status URL points at the Actions run); they now set
+// `deployment: false`, but older records remain and a regression would bring them back.
 // Only the record created by Vercel's GitHub integration binds the Preview host to the sha.
 const VERCEL_DEPLOYMENT_CREATOR = "vercel[bot]";
 const GITHUB_DEPLOYMENT_PAGINATION_ERROR = "GITHUB_DEPLOYMENT_PAGINATION_INVALID";
@@ -276,6 +278,25 @@ function isVercelCreatedDeployment(item) {
   return item?.creator?.login === VERCEL_DEPLOYMENT_CREATOR && item?.creator?.type === "Bot";
 }
 
+/**
+ * A deployment's effective status: the newest one that is not `inactive`.
+ *
+ * A newer Vercel deploy does not mark an older Vercel record inactive (observed 2026-11-24/25:
+ * records keep `success` across later Vercel deploys, as if Vercel posts with auto_inactive off). The
+ * `inactive` marker comes from GitHub when any other deployment in the same environment reaches
+ * `success`, which was every Actions job bound to the staging environment until those jobs set
+ * `deployment: false`. `inactive` therefore says "something newer exists in this environment",
+ * not "this build is gone"; Vercel deployments are immutable. Only leading `inactive` entries are
+ * skipped: whatever Vercel posted before them must itself be `success` with the exact host.
+ */
+function effectiveDeploymentStatus(statuses) {
+  const list = Array.isArray(statuses) ? statuses : [];
+  let index = 0;
+  while (index < list.length && list[index]?.state === "inactive") index += 1;
+  const effective = index < list.length ? list[index] : null;
+  return { effective, inactiveMarked: index > 0 };
+}
+
 export async function verifyDeployment(source, fetchImpl = fetch) {
   const headers = { Accept: "application/vnd.github+json", Authorization: `Bearer ${source.GITHUB_TOKEN}`, "X-GitHub-Api-Version": "2022-11-28" };
   let page = 1;
@@ -285,6 +306,8 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
   let candidateCount = 0;
   const seenCandidateIds = new Set();
   const matchedCandidates = [];
+  // Effective-success host of every Vercel record for this sha ("" when it never reached success).
+  const vercelCandidateHosts = new Map();
 
   while (true) {
     if (reads >= GITHUB_READ_BUDGET) throw new Error("GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED");
@@ -321,14 +344,15 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
       reads += 1;
       if (statusResponse.status !== 200 || statusResponse.headers.has("location")) throw new Error("GITHUB_DEPLOYMENT_STATUS_READ_FAILED");
       const statuses = await statusResponse.json();
-      const latest = Array.isArray(statuses) ? statuses[0] : null;
-      const host = latest?.state === "success" ? deploymentStatusHost(latest) : "";
+      const { effective, inactiveMarked } = effectiveDeploymentStatus(statuses);
+      const host = effective?.state === "success" ? deploymentStatusHost(effective) : "";
+      vercelCandidateHosts.set(candidate.id, host);
       const deploymentMatched = host === source.CELEBRATEDEAL_DEPLOYMENT_HOST;
       const sourceMatched = candidate.sha === source.CELEBRATEDEAL_SOURCE_SHA;
       const preview = candidate.production_environment === false;
-      const ready = latest?.state === "success";
+      const ready = effective?.state === "success";
       if (deploymentMatched && sourceMatched && preview && ready && host.endsWith(".vercel.app") && SAFE_HOST.test(host)) {
-        matchedCandidates.push({ id: candidate.id, host });
+        matchedCandidates.push({ id: candidate.id, host, inactiveMarked });
       }
     }
 
@@ -341,7 +365,14 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
   if (candidateCount === 0) throw new Error("GITHUB_DEPLOYMENT_AMBIGUOUS");
   if (matchedCandidates.length > 1) throw new Error("GITHUB_DEPLOYMENT_AMBIGUOUS");
   if (matchedCandidates.length === 0) throw new Error("GITHUB_DEPLOYMENT_LINEAGE_MISMATCH");
-  const [{ id: deploymentId, host }] = matchedCandidates;
+  const [{ id: deploymentId, host, inactiveMarked }] = matchedCandidates;
+  // A record that GitHub marked inactive is accepted only while no newer Vercel record for this
+  // sha points anywhere else (a redeploy to another host, or one still building or failed).
+  if (inactiveMarked) {
+    for (const [id, otherHost] of vercelCandidateHosts) {
+      if (id > deploymentId && otherHost !== host) throw new Error("GITHUB_DEPLOYMENT_LINEAGE_MISMATCH");
+    }
+  }
   return { host, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, deploymentDigest: digest("deployment", deploymentId), reads };
 }
 

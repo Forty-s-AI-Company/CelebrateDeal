@@ -14,7 +14,7 @@ test("recovery workflow is dispatch-only, protected-master and fixed Preview env
   const job = workflow.jobs["isolated-recovery"];
   assert.match(job.if, /refs\/heads\/master/u);
   assert.match(job.if, /github\.ref_protected/u);
-  assert.equal(job.environment, "Preview – celebrate-deal-staging");
+  assert.deepEqual(job.environment, { name: "Preview – celebrate-deal-staging", deployment: false });
 });
 
 test("private identity is injected only after fixed artifact and receipt validation", () => {

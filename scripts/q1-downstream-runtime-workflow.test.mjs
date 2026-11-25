@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 const workflow=readFileSync('.github/workflows/q1-downstream-runtime.yml','utf8');
 test('only protected master injects the existing minimal staging bindings after contracts and lineage',()=>{
  assert.match(workflow,/github.ref == 'refs\/heads\/master' && github.ref_protected/);
- assert.match(workflow,/environment: Preview – celebrate-deal-staging/);
+ assert.match(workflow,/environment:\r?\n\s+name: Preview – celebrate-deal-staging\r?\n\s+deployment: false\r?\n/);
  assert.match(workflow,/persist-credentials: false/);
  assert.ok(workflow.indexOf('Validate downstream readonly contracts')<workflow.indexOf('secrets.STAGING_DATABASE_URL'));
  assert.ok(workflow.indexOf('--verify-lineage')<workflow.indexOf('secrets.JOB_SECRET'));

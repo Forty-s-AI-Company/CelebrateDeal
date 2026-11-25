@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 const workflow=readFileSync('.github/workflows/q1-merchant-schema.yml','utf8');
 test('fixed protected migration binds staging DB and readonly authorization after tests and lineage',()=>{
  assert.match(workflow,/github.ref == 'refs\/heads\/master' && github.ref_protected/);
- assert.match(workflow,/environment: Preview – celebrate-deal-staging/);
+ assert.match(workflow,/environment:\r?\n\s+name: Preview – celebrate-deal-staging\r?\n\s+deployment: false\r?\n/);
  assert.ok(workflow.indexOf('q1-merchant-schema.test.ts')<workflow.indexOf('secrets.STAGING_DATABASE_URL'));
  assert.ok(workflow.indexOf('--verify-lineage')<workflow.indexOf('secrets.STAGING_DATABASE_URL'));
  assert.match(workflow,/secrets\.JOB_SECRET/);

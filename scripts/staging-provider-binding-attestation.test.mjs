@@ -70,7 +70,7 @@ test('workflow is manual, protected Preview only, and injects only fixed R2 bind
   assert.equal(Object.keys(workflow.jobs).length, 1);
   const job = workflow.jobs['attest-r2'];
   assert.match(job.if, /refs\/heads\/master.*github\.ref_protected/u);
-  assert.equal(job.environment, 'Preview – celebrate-deal-staging');
+  assert.deepEqual(job.environment, { name: 'Preview – celebrate-deal-staging', deployment: false });
   assert.deepEqual(workflow.permissions, { contents: 'read' });
   const step = job.steps.find((entry) => entry.id === 'attest');
   assert.ok(step);

@@ -11,7 +11,7 @@ test("remediation workflow is manual, protected-master only and least privilege"
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.deepEqual(Object.keys(workflow.jobs), ["remediate"]);
   assert.equal(job.if, "${{ github.ref == 'refs/heads/master' && github.ref_protected }}");
-  assert.equal(job.environment, "Preview – celebrate-deal-staging");
+  assert.deepEqual(job.environment, { name: "Preview – celebrate-deal-staging", deployment: false });
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.equal(job.permissions, undefined);
   assert.deepEqual(workflow.concurrency, { group: "fixed-staging-migration-apply", "cancel-in-progress": false });

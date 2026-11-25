@@ -39,7 +39,7 @@ test("heartbeat is dispatch-only, protected-branch only and honours the pause va
   assert.match(job.if, /github\.ref_protected/u);
   assert.match(job.if, /vars\.SCHEDULED_JOBS_PAUSED != 'true'/u);
   assert.match(job.if, /vars\.SCHEDULED_JOBS_HEARTBEAT_ENABLED == 'true'/u, "opt-in, default off");
-  assert.equal(job.environment, "Preview – celebrate-deal-staging");
+  assert.deepEqual(job.environment, { name: "Preview – celebrate-deal-staging", deployment: false });
 });
 
 test("only one heartbeat runs at a time and a newcomer never cancels the live loop", () => {

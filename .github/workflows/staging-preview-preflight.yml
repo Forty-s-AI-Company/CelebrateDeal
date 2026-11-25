@@ -11,7 +11,9 @@ jobs:
   attest:
     if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
     runs-on: ubuntu-latest
-    environment: Preview – celebrate-deal-staging
+    environment:
+      name: Preview – celebrate-deal-staging
+      deployment: false
     timeout-minutes: 5
     steps:
       - name: Checkout protected attestation code

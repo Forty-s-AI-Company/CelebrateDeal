@@ -32,7 +32,9 @@ jobs:
     if: ${{ vars.SCHEDULED_JOBS_HEARTBEAT_ENABLED == 'true' && github.ref == 'refs/heads/master' && github.ref_protected && vars.SCHEDULED_JOBS_PAUSED != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
-    environment: Preview – celebrate-deal-staging
+    environment:
+      name: Preview – celebrate-deal-staging
+      deployment: false
     # actions: write is needed only to dispatch the successor run.
     permissions:
       contents: read

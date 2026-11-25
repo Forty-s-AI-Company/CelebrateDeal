@@ -44,7 +44,7 @@ test("secure staging workflow is valid YAML and protected-default-branch only", 
   const job = workflow.jobs["trusted-runner"];
   assert.match(String(job.if), /refs\/heads\/master/u);
   assert.match(String(job.if), /github\.ref_protected/u);
-  assert.equal(job.environment, "Preview – celebrate-deal-staging");
+  assert.deepEqual(job.environment, { name: "Preview – celebrate-deal-staging", deployment: false });
   assert.deepEqual(workflow.permissions, { contents: "read", deployments: "read" });
 });
 

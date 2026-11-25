@@ -155,7 +155,7 @@ test("workflow is manual, protected-master only, and never starts checkout or bu
   assert.match(workflow, /^on:\n {2}workflow_dispatch:/mu);
   assert.doesNotMatch(workflow, /^\s+(?:push|pull_request|schedule):/mu);
   assert.match(workflow, /if: \$\{\{ github\.ref == 'refs\/heads\/master' && github\.ref_protected \}\}/u);
-  assert.match(workflow, /environment: Preview – celebrate-deal-staging/u);
+  assert.match(workflow, /environment:\r?\n\s+name: Preview – celebrate-deal-staging\r?\n\s+deployment: false\r?\n/u);
   assert.doesNotMatch(workflow, /buyer_order|PAYUNI_|payment-only|wp4-buyer/u);
   // Secrets reach only the alias check, the runner step and the R-10 deactivate step after it, all after tests and lineage.
   assert.equal((workflow.match(/secrets\.JOB_SECRET/gu) ?? []).length, 2);

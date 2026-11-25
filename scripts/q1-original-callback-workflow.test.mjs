@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 const workflow = readFileSync('.github/workflows/q1-original-callback.yml', 'utf8');
 test('only protected master injects minimal staging credentials after contracts and lineage', () => {
   assert.match(workflow, /github.ref == 'refs\/heads\/master' && github.ref_protected/);
-  assert.match(workflow, /environment: Preview – celebrate-deal-staging/);
+  assert.match(workflow, /environment:\r?\n\s+name: Preview – celebrate-deal-staging\r?\n\s+deployment: false\r?\n/);
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /STAGING_DATABASE_URL: \$\{\{ secrets.STAGING_DATABASE_URL \}\}/);
   assert.match(workflow, /JOB_SECRET: \$\{\{ secrets.JOB_SECRET \}\}/);

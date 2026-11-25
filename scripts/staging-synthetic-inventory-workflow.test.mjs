@@ -9,7 +9,7 @@ const job = workflow.jobs.inventory;
 test("inventory workflow is manual, protected-master only and least privilege", () => {
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.match(job.if, /github.ref == 'refs\/heads\/master' && github.ref_protected/u);
-  assert.equal(job.environment, "Preview – celebrate-deal-staging");
+  assert.deepEqual(job.environment, { name: "Preview – celebrate-deal-staging", deployment: false });
   assert.deepEqual(workflow.permissions, { contents: "read" });
 });
 

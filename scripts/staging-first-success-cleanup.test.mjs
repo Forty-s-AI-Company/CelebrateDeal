@@ -121,7 +121,7 @@ test("cleanup workflow is manual, protected-master only, serialised with the run
   assert.match(workflow, /^on:\n {2}workflow_dispatch:/mu);
   assert.doesNotMatch(workflow, /^\s+(?:push|pull_request|schedule|workflow_run|merge_group):/mu);
   assert.match(workflow, /if: \$\{\{ github\.ref == 'refs\/heads\/master' && github\.ref_protected \}\}/u);
-  assert.match(workflow, /environment: Preview – celebrate-deal-staging/u);
+  assert.match(workflow, /environment:\r?\n\s+name: Preview – celebrate-deal-staging\r?\n\s+deployment: false\r?\n/u);
   assert.match(workflow, /concurrency:\n {2}group: staging-first-success\n {2}cancel-in-progress: false/u);
   assert.match(workflow, /mode:\n(?: {8}.+\n)*? {8}type: choice\n {8}default: deactivate\n {8}options:\n {10}- deactivate\n {10}- delete\n/u);
   assert.match(workflow, /CELEBRATEDEAL_CLEANUP_MODE: \$\{\{ inputs\.mode \}\}/u);
