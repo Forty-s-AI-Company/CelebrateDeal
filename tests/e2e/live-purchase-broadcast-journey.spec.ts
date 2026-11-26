@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
+import { enterLiveWithNickname } from "./helpers/live-viewer-nickname";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition, reconcileCommerceOrderRefund } from "../../src/lib/commerce-orders";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -46,6 +47,7 @@ test("actual live purchase panel shows only server-attributed paid purchases and
     const admitted = page.waitForResponse(response => new URL(response.url()).pathname === "/api/live-admission" && response.request().method() === "POST");
     await page.goto(`/live/${live.slug}`);
     expect((await admitted).status()).toBe(200);
+    await enterLiveWithNickname(page);
     const panel = page.getByRole("complementary", { name: "本場近期購買" });
     await expect(panel.getByText(`購買了 ${product.name}`, { exact: true })).toBeVisible();
     await expect(panel.locator("li")).toHaveCount(1);

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
+import { enterLiveWithNickname } from "./helpers/live-viewer-nickname";
 
 const db = new PrismaClient();
 test.afterAll(async () => { await db.$disconnect(); });
@@ -33,6 +34,7 @@ for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       const response = await page.goto(`/live/${live.slug}`, { waitUntil: "domcontentloaded" });
       expect(response?.status()).toBe(200);
+      await enterLiveWithNickname(page);
       await expect(page.getByTestId("live-advanced-interaction")).toContainText("測試快閃優惠");
       await page.getByRole("button", { name: "立即搶購特惠方案" }).click();
       await expect(page).toHaveURL(new RegExp(`/checkout/${vendor.id}/${product.id}\\?flashSale=${run.id}$`, "u"));

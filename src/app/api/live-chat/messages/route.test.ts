@@ -24,6 +24,7 @@ import { LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quota-admission";
 import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
 import { createLiveViewerPass, LIVE_VIEWER_PASS_COOKIE } from "@/lib/live-viewer-pass";
 import { LiveChatError } from "@/lib/live-chat";
+import { LIVE_VIEWER_PROFILE_COOKIE } from "@/lib/live-viewer-profile";
 import { GET, POST } from "@/app/api/live-chat/messages/route";
 
 const admissionToken = "A".repeat(43);
@@ -116,6 +117,20 @@ describe("live chat route", () => {
       deploymentSource: "cloudflare",
       ingressSecret,
     });
+  });
+
+  it("forwards the nickname profile cookie to the chat write, or null without one", async () => {
+    const profileToken = "P".repeat(43);
+    const post = (cookie: string) => POST(request("/api/live-chat/messages", {
+      method: "POST",
+      headers: { cookie },
+      body: JSON.stringify({ vendorId: "v1", liveId: "l1", clientMessageId: crypto.randomUUID(), body: "hello" }),
+    }));
+    const base = `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${chatToken}; ${LIVE_VIEWER_SESSION_COOKIE}=${admissionToken}`;
+    expect((await post(`${base}; ${LIVE_VIEWER_PROFILE_COOKIE}=${profileToken}`)).status).toBe(201);
+    expect(mocks.createViewerChatMessage).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ profileToken }));
+    expect((await post(base)).status).toBe(201);
+    expect(mocks.createViewerChatMessage).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ profileToken: null }));
   });
 
   it("rejects malformed POST data without a database call", async () => {

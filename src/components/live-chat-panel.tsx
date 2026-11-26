@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Send } from "lucide-react";
 
+import { ChatAvatar } from "@/components/live-viewer-profile";
 import type { ScheduledRuntimeMessage, ViewerRuntimeMessage } from "@/lib/live-chat-contract";
 import { parseViewerRuntimeMessage, type LiveUpdatesPayload, type LiveUpdatesStatus } from "@/lib/live-updates-client";
 import { useLiveUpdates } from "@/lib/use-live-updates";
@@ -34,6 +35,16 @@ export type LiveChatPanelProps = {
   liveId: string;
   scheduledMessages: ScheduledRuntimeMessage[];
   onAdmissionInvalid?: () => void;
+  /**
+   * The viewer's nickname in this room. When `required`, posting waits for a
+   * nickname (replay asks here instead of at entry); `onEdit` opens the
+   * nickname dialog.
+   */
+  viewerProfile?: {
+    required: boolean;
+    profile: { nickname: string; avatarUrl: string } | null;
+    onEdit: () => void;
+  };
 };
 
 type ChatListPayload = {
@@ -92,6 +103,90 @@ export function postErrorMessage(status: number | "keyword" | "rate_limited" | "
   return "留言無法送出，內容仍為你保留。";
 }
 
+function ownViewerProfile(viewerProfile: LiveChatPanelProps["viewerProfile"]) {
+  return viewerProfile?.profile ?? null;
+}
+
+/** A room that uses nicknames keeps the composer closed until one is set. */
+export function isNicknameMissing(viewerProfile: LiveChatPanelProps["viewerProfile"]) {
+  return Boolean(viewerProfile?.required && !viewerProfile.profile);
+}
+
+function pendingAuthorName(profile: { nickname: string } | null, displayName: string | null) {
+  return profile?.nickname ?? displayName ?? "我";
+}
+
+function ChatMessageRow({
+  avatarUrl,
+  name,
+  label,
+  body,
+  footer,
+  pending = false,
+}: {
+  avatarUrl: string | null | undefined;
+  name: string;
+  label?: string | null;
+  body: string;
+  footer?: string;
+  pending?: boolean;
+}) {
+  return (
+    <article className={`flex gap-2 rounded-2xl bg-white/5 p-3 ${pending ? "border border-dashed border-white/20 opacity-80" : ""}`}>
+      <ChatAvatar url={avatarUrl} />
+      <div className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-bold text-white/85">
+          {name}
+          {label ? <span className="ml-2 text-white/55">{label}</span> : null}
+        </span>
+        <p className="mt-1 break-words text-sm leading-6 text-white/85">{body}</p>
+        {footer ? <p className="mt-1 text-xs text-white/55">{footer}</p> : null}
+      </div>
+    </article>
+  );
+}
+
+function ComposerNotice({
+  connectionReady,
+  viewer,
+  nicknameMissing,
+  viewerProfile,
+}: {
+  connectionReady: boolean;
+  viewer: ViewerState;
+  nicknameMissing: boolean;
+  viewerProfile: LiveChatPanelProps["viewerProfile"];
+}) {
+  const ownProfile = viewerProfile?.profile ?? null;
+  let notice = null;
+  if (!connectionReady) {
+    notice = <p role="status" className="mb-2 text-xs text-white/65">直播連線尚未就緒，目前無法留言。</p>;
+  } else if (!viewer.canPost) {
+    notice = <p role="status" className="mb-2 text-xs text-white/65">{readonlyMessage(viewer.reason)}</p>;
+  } else if (nicknameMissing && viewerProfile) {
+    notice = (
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p role="status" className="text-xs text-white/65">設定暱稱與頭像後即可留言。</p>
+        <button type="button" onClick={viewerProfile.onEdit} className="min-h-11 rounded-xl bg-white px-3 text-xs font-black text-slate-950">設定暱稱</button>
+      </div>
+    );
+  }
+  return (
+    <>
+      {notice}
+      {ownProfile && viewerProfile ? (
+        <div className="mb-2 flex items-center gap-2 text-xs text-white/70">
+          <ChatAvatar url={ownProfile.avatarUrl} size={22} />
+          <span className="min-w-0 truncate">以「{ownProfile.nickname}」留言</span>
+          <button type="button" onClick={viewerProfile.onEdit} className="min-h-11 shrink-0 rounded-lg px-2 font-bold text-white underline underline-offset-2 hover:text-white/85">
+            更改
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function LiveChatPanel(props: LiveChatPanelProps) {
   // A live identity change must create a fresh state boundary. This prevents
   // messages, permissions, drafts, and late async work from crossing sessions.
@@ -105,6 +200,7 @@ function LiveChatSession({
   liveId,
   scheduledMessages,
   onAdmissionInvalid,
+  viewerProfile,
 }: LiveChatPanelProps) {
   const [viewerMessages, setViewerMessages] = useState<ViewerRuntimeMessage[]>([]);
   const [viewer, setViewer] = useState<ViewerState>({ canPost: false, displayName: null, reason: "verification_required" });
@@ -118,7 +214,9 @@ function LiveChatSession({
   const admissionRefreshRequestedRef = useRef(false);
 
   const visibleScheduledMessages = useMemo(() => sortScheduledMessages(scheduledMessages), [scheduledMessages]);
-  const canPost = enabled && admissionStatus === "admitted" && !paused && viewer.canPost && pending === null;
+  const ownProfile = ownViewerProfile(viewerProfile);
+  const nicknameMissing = isNicknameMissing(viewerProfile);
+  const canPost = enabled && admissionStatus === "admitted" && !paused && viewer.canPost && !nicknameMissing && pending === null;
 
   useEffect(() => () => postControllerRef.current?.abort(), []);
 
@@ -162,7 +260,7 @@ function LiveChatSession({
   }, [pending, viewerMessages.length, visibleScheduledMessages.length]);
 
   const sendIntent = useCallback(async (intent: PendingIntent) => {
-    if (!enabled || admissionStatus !== "admitted" || paused || !viewer.canPost) return;
+    if (!enabled || admissionStatus !== "admitted" || paused || !viewer.canPost || nicknameMissing) return;
     const controller = new AbortController();
     postControllerRef.current?.abort();
     postControllerRef.current = controller;
@@ -207,7 +305,7 @@ function LiveChatSession({
     } finally {
       if (postControllerRef.current === controller) postControllerRef.current = null;
     }
-  }, [admissionStatus, enabled, liveId, onAdmissionInvalid, paused, vendorId, viewer.canPost]);
+  }, [admissionStatus, enabled, liveId, nicknameMissing, onAdmissionInvalid, paused, vendorId, viewer.canPost]);
 
   const submitDraft = useCallback(() => {
     const body = draft.normalize("NFKC").trim();
@@ -241,31 +339,19 @@ function LiveChatSession({
           <p className="py-8 text-center text-sm text-white/55">直播開始後，留言會顯示在這裡。</p>
         ) : null}
 
+        {/* Scripted roles and viewers share one layout: avatar, name, body. */}
         {visibleScheduledMessages.map((message) => (
-          <article key={`scheduled:${message.id}`} className="rounded-2xl bg-white/5 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-xs font-bold text-white/85">
-                {message.actor.name}
-                {message.actor.label ? <span className="ml-2 text-white/55">{message.actor.label}</span> : null}
-              </span>
-            </div>
-            <p className="mt-1 break-words text-sm leading-6 text-white/85">{message.body}</p>
-          </article>
+          <ChatMessageRow key={`scheduled:${message.id}`} avatarUrl={message.actor.avatarUrl} name={message.actor.name}
+            label={message.actor.label} body={message.body} />
         ))}
 
         {viewerMessages.map((message) => (
-          <article key={`viewer:${message.id}`} className="rounded-2xl bg-white/5 p-3">
-            <span className="text-xs font-bold text-white/70">{message.actor.name}</span>
-            <p className="mt-1 break-words text-sm leading-6 text-white/85">{message.body}</p>
-          </article>
+          <ChatMessageRow key={`viewer:${message.id}`} avatarUrl={message.actor.avatarUrl} name={message.actor.name} body={message.body} />
         ))}
 
         {pending ? (
-          <article className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-3 opacity-80">
-            <span className="text-xs font-bold text-white/70">{viewer.displayName ?? "我"}</span>
-            <p className="mt-1 break-words text-sm leading-6 text-white/85">{pending.body}</p>
-            <p className="mt-1 text-xs text-white/55">{pending.status === "sending" ? "傳送中…" : "尚未送出"}</p>
-          </article>
+          <ChatMessageRow pending avatarUrl={ownProfile?.avatarUrl} name={pendingAuthorName(ownProfile, viewer.displayName)} body={pending.body}
+            footer={pending.status === "sending" ? "傳送中…" : "尚未送出"} />
         ) : null}
       </div>
 
@@ -274,11 +360,8 @@ function LiveChatSession({
 
       {enabled ? (
         <form onSubmit={onSubmit} className="border-t border-white/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          {admissionStatus !== "admitted" || paused ? (
-            <p role="status" className="mb-2 text-xs text-white/65">直播連線尚未就緒，目前無法留言。</p>
-          ) : !viewer.canPost ? (
-            <p role="status" className="mb-2 text-xs text-white/65">{readonlyMessage(viewer.reason)}</p>
-          ) : null}
+          <ComposerNotice connectionReady={admissionStatus === "admitted" && !paused} viewer={viewer}
+            nicknameMissing={nicknameMissing} viewerProfile={viewerProfile} />
           <label htmlFor="live-chat-message" className="sr-only">輸入直播留言</label>
           <div className="flex flex-wrap items-end gap-2 sm:flex-nowrap">
             <textarea
@@ -289,7 +372,7 @@ function LiveChatSession({
                 if (!pending) setPostMessage(null);
               }}
               onKeyDown={onComposerKeyDown}
-              disabled={!enabled || admissionStatus !== "admitted" || paused || !viewer.canPost || pending !== null}
+              disabled={!enabled || admissionStatus !== "admitted" || paused || !viewer.canPost || nicknameMissing || pending !== null}
               maxLength={CHAT_BODY_MAX_LENGTH}
               rows={2}
               placeholder="輸入留言…"

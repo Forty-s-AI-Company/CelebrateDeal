@@ -6,6 +6,7 @@ import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionTok
 import type { ViewerRuntimeMessage as ContractViewerRuntimeMessage } from "@/lib/live-chat-contract";
 import { hashLiveViewerToken, hasActiveLiveViewerSession } from "@/lib/live-quota-admission";
 import { verifyLiveViewerPass } from "@/lib/live-viewer-pass";
+import { findLiveViewerProfile, liveViewerAvatarUrl } from "@/lib/live-viewer-profile";
 import { normalizeClientIp } from "@/lib/request-client-ip";
 import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
@@ -83,11 +84,14 @@ type StoredViewerMessage = {
   status: string;
   isSimulated: boolean;
   createdAt: Date;
+  viewerProfileId?: string | null;
+  /** The viewer's current nickname profile in this live, when it posted with one. */
+  viewerProfile?: { nickname: string; avatarSeed: string } | null;
 };
 
 type LiveChatModels = Pick<
   PrismaClient,
-  "formSubmission" | "liveViewerSession" | "blacklist" | "liveChatMessage"
+  "formSubmission" | "liveViewerSession" | "blacklist" | "liveChatMessage" | "liveViewerProfile"
 >;
 
 type LiveChatDatabase = LiveChatModels & Pick<PrismaClient, "$transaction">;
@@ -271,6 +275,8 @@ function messageSelect() {
     status: true,
     isSimulated: true,
     createdAt: true,
+    viewerProfileId: true,
+    viewerProfile: { select: { nickname: true, avatarSeed: true } },
   } as const;
 }
 
@@ -292,12 +298,19 @@ function toViewerRuntimeMessage(message: StoredViewerMessage): ViewerRuntimeMess
   const createdAt = message.createdAt instanceof Date ? message.createdAt : new Date(message.createdAt);
   if (!Number.isFinite(createdAt.getTime())) return null;
 
+  // The nickname profile replaces the registration name for display only;
+  // authorName stays the registration snapshot for merchant views.
+  const profile = message.viewerProfileId ? message.viewerProfile ?? null : null;
+  const avatarUrl = profile ? liveViewerAvatarUrl(profile.avatarSeed) : null;
   return {
     id: message.id,
     source: "viewer",
     createdAt: createdAt.toISOString(),
     body,
-    actor: { name: normalizeDisplayName(message.authorName) },
+    actor: {
+      name: normalizeDisplayName(profile?.nickname ?? message.authorName),
+      ...(avatarUrl ? { avatarUrl } : {}),
+    },
   };
 }
 
@@ -391,6 +404,19 @@ async function resolveVerifiedViewerContext(
     },
     admissionToken: admission.admissionToken,
   };
+}
+
+/**
+ * The verified registrant's name for this live (the nickname suggestion), or
+ * null without a valid chat session. Admission must already be resolved.
+ */
+export async function resolveViewerRegistrationName(
+  database: LiveChatModels,
+  input: { vendorId: string; liveId: string; chatSessionToken: string | null; now?: Date },
+  admission: ViewerChatAdmissionContext,
+) {
+  const context = await resolveVerifiedViewerContext(database, input, admission);
+  return context ? context.submission.name : null;
 }
 
 type BlacklistRows = Array<{ identifier: string; identifierType: string }>;
@@ -675,6 +701,8 @@ export async function createViewerChatMessage(
   input: ViewerChatPost & {
     chatSessionToken: string | null;
     admissionToken: string | null;
+    /** The viewer's nickname profile cookie; without one the registration name shows. */
+    profileToken?: string | null;
     ipAddress?: string | null;
     now?: Date;
   },
@@ -750,6 +778,13 @@ export async function createViewerChatMessage(
 
     const rows = await assertViewerIdentityAllowed(tx, context, input.vendorId, ipAddress);
     if (isKeywordBlocked(rows, body)) throw new LiveChatError("keyword_blocked");
+    // Same vendor/live as the admission just verified; the composite foreign
+    // key also refuses a profile of another live.
+    const profile = await findLiveViewerProfile(
+      tx,
+      { vendorId: input.vendorId, liveId: input.liveId },
+      input.profileToken ?? null,
+    );
 
     const created = await tx.liveChatMessage.create({
       data: {
@@ -758,6 +793,7 @@ export async function createViewerChatMessage(
         liveId: input.liveId,
         formSubmissionId: context.submission.id,
         roleId: null,
+        viewerProfileId: profile?.id ?? null,
         authorName: normalizeDisplayName(context.submission.name),
         body,
         source: "viewer",

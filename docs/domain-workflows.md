@@ -19,6 +19,15 @@
 
 區分 live、scheduled prerecorded、VOD、preview 與 published；區分 visitor、lead、click、checkout、paid、refund、commission、payout。官方／AI／system 互動角色與腳本化虛擬使用者只存在於觀眾端聊天室（2026-10-18 owner 決策，允許不標示的虛擬觀眾帳號）；它們的發言、觀看與互動不得計入商家後台的報名、訂單、付款、成效統計或任何 conversion。外部 storefront 流程依序使用有效 promoter URL、vendor default URL、click event；只有 API、webhook、核准匯入或 reconciliation 的訂單證據可計入 conversion。
 
+### 觀眾暱稱與頭像（2026-11-26）
+
+有聊天室（綁定有效報名表）的直播，觀眾入場（admission 成功）後、影片載入前要先設定暱稱與頭像；設定綁在長效 profile cookie 上，同一場再進來不再問，可在聊天區「更改」。回放不強制，要留言時才請他設定。已驗證的報名者預填報名姓名。讀取 profile 失敗時不擋觀看（fail-open），留言退回報名姓名。
+
+- 暱稱 1–20 字，不可只有空白、不可含網址或控制字元；同一場直播內不可與其他觀眾暱稱、這場綁定腳本中啟用角色的名稱、商家名稱或「觀眾」重複（NFKC、大小寫、全半形與空白都不分）。重複時回「這個名稱已經有人使用，請換一個」。
+- 頭像只能從 20 個預設頭像（與虛擬角色相同的 DiceBear 預設）選，不開放上傳。
+- 留言門檻不變：仍需已驗證 Email 的報名。訊息顯示暱稱與頭像，`LiveChatMessage.authorName` 仍是報名姓名，商家後台、匯出與統計不變；暱稱不進任何成效統計。虛擬角色訊息也畫頭像，標示規則不變。
+- 契約見 [API 契約](codex-goal/API_CONTRACT_REGISTRY.md) 的 `/api/live-viewer-profile` 與 [Prisma 不變量](codex-goal/PRISMA_INVARIANTS.md) 的 `20261126100000_live_viewer_profiles`。
+
 ### 指定場次（fixed sessions）
 
 一場預錄直播（VOD、非常青、影片長度已知）可設多個開播時間（`Live.sessionMode = fixed_sessions`，`LiveSession` 列）。權威資料與規則：

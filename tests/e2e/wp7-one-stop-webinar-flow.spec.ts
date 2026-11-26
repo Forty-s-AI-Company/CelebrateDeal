@@ -6,6 +6,7 @@ import { PrismaClient } from "@prisma/client";
 import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
 import { processDuePostLiveFollowups } from "../../src/lib/email-delivery";
 import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
+import { enterLiveWithNickname } from "./helpers/live-viewer-nickname";
 
 const db = new PrismaClient();
 const runId = randomUUID();
@@ -327,6 +328,8 @@ test("one stop webinar verifies registration, preserves live playback through de
   ));
   await page.goto(livePath, { waitUntil: "domcontentloaded" });
   expect((await liveAdmissionResponse).status()).toBe(200);
+  // The room has chat, so the live source loads only after the nickname step.
+  await enterLiveWithNickname(page);
   const playbackResponse = await playbackSourceResponse;
   expect(playbackResponse.status()).toBe(200);
   const playbackPayload = await playbackResponse.json() as { playbackUrl?: unknown };

@@ -1,3 +1,4 @@
+import { isCanonicalInteractionRolePresetUrl } from "@/lib/interaction-role";
 import type { ViewerRuntimeMessage } from "@/lib/live-chat-contract";
 
 /**
@@ -51,12 +52,16 @@ export function parseViewerRuntimeMessage(value: unknown): ViewerRuntimeMessage 
   if (typeof value.createdAt !== "string" || !Number.isFinite(Date.parse(value.createdAt))) return null;
   if (typeof value.body !== "string" || !value.body.trim() || Array.from(value.body).length > CHAT_BODY_MAX_LENGTH) return null;
   if (!isObject(value.actor) || typeof value.actor.name !== "string" || !value.actor.name.trim()) return null;
+  // Only a preset avatar is ever drawn for a viewer; anything else is dropped.
+  const avatarUrl = isCanonicalInteractionRolePresetUrl(value.actor.avatarUrl as string | undefined)
+    ? value.actor.avatarUrl as string
+    : null;
   return {
     id: value.id,
     source: "viewer",
     createdAt: value.createdAt,
     body: value.body,
-    actor: { name: value.actor.name },
+    actor: { name: value.actor.name, ...(avatarUrl ? { avatarUrl } : {}) },
   };
 }
 

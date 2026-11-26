@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
+import { enterLiveWithNickname } from "./helpers/live-viewer-nickname";
 
 const db = new PrismaClient();
 const runId = randomUUID();
@@ -182,6 +183,8 @@ test("gates an event-driven external checkout while internal checkout stays imme
   const livePath = `/live/${fixture.slug}`;
   const response = await page.goto(livePath, { waitUntil: "domcontentloaded" });
   expect(response?.status()).toBe(200);
+  // The room has chat, so the live video loads only after the nickname step.
+  await enterLiveWithNickname(page);
   const video = page.locator("video");
   await expect(video).toHaveCount(1);
   await expect(page.getByRole("complementary", { name: /推薦商品/u })).toHaveCount(0);

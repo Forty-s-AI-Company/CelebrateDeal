@@ -11,6 +11,7 @@ import {
 } from "@/lib/live-chat";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { liveViewerPassFromRequest, liveViewerPassRateLimitIdentity } from "@/lib/live-viewer-pass";
+import { liveViewerProfileTokenFromRequest } from "@/lib/live-viewer-profile";
 import { chatSpeakerRateLimitIdentity } from "@/lib/form-submission-chat-session";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
@@ -145,6 +146,7 @@ export async function POST(request: Request) {
       ...parsed.data,
       chatSessionToken: chatSessionTokenFromRequest(request),
       admissionToken: liveViewerTokenFromRequest(request),
+      profileToken: liveViewerProfileTokenFromRequest(request),
       ipAddress: security.clientIp,
     });
     return json(result.message, result.created ? 201 : 200);

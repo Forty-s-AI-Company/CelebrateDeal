@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
+import { enterLiveWithNickname } from "./helpers/live-viewer-nickname";
 
 const db = new PrismaClient();
 const runId = randomUUID();
@@ -171,6 +172,9 @@ test("keeps one persistent video node from waiting through playing into replay",
 
   await expect.poll(() => liveRouteRequests.length).toBeGreaterThanOrEqual(2);
   await expect.poll(() => admissionResponses).toEqual(expect.arrayContaining([200]));
+  // The room has chat, so the live video loads only after the nickname step.
+  expect(sourceResponses).toHaveLength(0);
+  await enterLiveWithNickname(page);
   await expect.poll(() => sourceResponses).toEqual(expect.arrayContaining([200]));
   await expect(page.locator("video")).toHaveCount(1);
 

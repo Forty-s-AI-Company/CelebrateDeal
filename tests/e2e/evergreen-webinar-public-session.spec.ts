@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "../../src/lib/form-submission-chat-session";
+import { enterLiveWithNickname } from "./helpers/live-viewer-nickname";
 
 /**
  * Evergreen (常青) Webinar public watch page on synthetic loopback data:
@@ -156,6 +157,8 @@ test("assigns a stable just-in-time session behind a waiting room without media"
 
 test("plays an on-demand session from its own start, locked to normal speed", async ({ page, context }) => {
   await page.goto(`/live/${fixture.onDemandSlug}`);
+  // The room has chat, so the session video loads only after the nickname step.
+  await enterLiveWithNickname(page);
   await expect(page.locator("video")).toHaveCount(1);
   await expect(page.getByText("預錄場次播放中")).toBeVisible();
   await expect(page.getByText("不是即時直播").first()).toBeVisible();
@@ -336,6 +339,7 @@ test("opens playback for a recurring-daily session that has already started", as
   // A finished earlier session (-90 min) must not shadow the one that began five minutes ago.
   const [, started] = await setDailyTimes(fixture.dailyPlayingLiveId, [-90, -5]);
   await page.goto(`/live/${fixture.dailyPlayingSlug}`);
+  await enterLiveWithNickname(page);
   await expect(page.locator("video")).toHaveCount(1);
   await expect(page.getByText("預錄場次播放中")).toBeVisible();
   await expect(page.getByTestId("live-waiting-room")).toHaveCount(0);

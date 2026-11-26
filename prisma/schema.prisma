@@ -181,6 +181,7 @@ model Vendor {
   streamUsageReconciliations       StreamUsageReconciliation[]
   streamOperationsAlerts           StreamOperationsAlert[]
   liveViewerSessions               LiveViewerSession[]
+  liveViewerProfiles               LiveViewerProfile[]
   platformReferralCommissions      PlatformReferralCommission[]
   liveProducts                     LiveProduct[]
   imageAssets                      ImageAsset[]
@@ -902,6 +903,7 @@ model Live {
   streamUsageLedgerEntries   StreamUsageLedgerEntry[]
   streamUsageAllocations     StreamUsageAllocationEntry[]
   viewerSessions             LiveViewerSession[]
+  viewerProfiles             LiveViewerProfile[]
   studioDrafts               LiveStudioDraft[]
   reminderReconciliationJobs LiveReminderReconciliationJob[]
   liveChatMessages           LiveChatMessage[]
@@ -1130,6 +1132,30 @@ model LiveViewerSession {
 
   @@index([vendorId, liveId, expiresAt])
   @@index([liveId, expiresAt])
+}
+
+/// 觀眾在單一直播間的暱稱與頭像。以長效、不透明的 profile cookie 雜湊識別
+/// 同一位觀眾（admission 的 viewer session 只有 90 秒且離開即刪除，不能用來
+/// 「同一場再進來不再問」）。normalizedNickname 在同一場直播內唯一，併發
+/// 搶同一個名字由資料庫唯一鍵決定。
+model LiveViewerProfile {
+  id                 String   @id @default(cuid())
+  vendorId           String
+  liveId             String
+  viewerKeyHash      String
+  nickname           String
+  normalizedNickname String
+  avatarSeed         String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  vendor       Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live         Live              @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  chatMessages LiveChatMessage[]
+
+  @@unique([vendorId, liveId, id])
+  @@unique([vendorId, liveId, viewerKeyHash])
+  @@unique([vendorId, liveId, normalizedNickname])
 }
 
 model LiveProduct {
@@ -1414,6 +1440,9 @@ model LiveChatMessage {
   liveId           String
   formSubmissionId String?
   roleId           String?
+  /// 觀眾留言時的暱稱 profile；聊天室顯示它目前的暱稱與頭像。authorName
+  /// 仍是報名姓名快照（商家後台與匯出不變）。
+  viewerProfileId  String?
   authorName       String
   body             String
   source           String   @default("viewer")
@@ -1424,12 +1453,14 @@ model LiveChatMessage {
 
   vendor         Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   live           Live             @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
-  formSubmission FormSubmission?  @relation(fields: [liveId, formSubmissionId], references: [liveId, id], onDelete: Restrict)
-  role           InteractionRole? @relation(fields: [vendorId, roleId], references: [vendorId, id], onDelete: Restrict)
+  formSubmission FormSubmission?    @relation(fields: [liveId, formSubmissionId], references: [liveId, id], onDelete: Restrict)
+  role           InteractionRole?   @relation(fields: [vendorId, roleId], references: [vendorId, id], onDelete: Restrict)
+  viewerProfile  LiveViewerProfile? @relation(fields: [vendorId, liveId, viewerProfileId], references: [vendorId, liveId, id], onDelete: NoAction)
 
   @@index([vendorId, liveId, createdAt])
   @@index([liveId, createdAt])
   @@index([vendorId, formSubmissionId, createdAt])
+  @@index([viewerProfileId])
 }
 
 model LiveNotificationRule {
