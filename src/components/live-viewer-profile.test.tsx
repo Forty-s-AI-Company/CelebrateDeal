@@ -9,6 +9,9 @@ import {
   abortAfter,
   ChatAvatar,
   fetchLiveViewerProfile,
+  keepsOpenRoom,
+  readyReadState,
+  type ProfileState,
   LIVE_VIEWER_AVATAR_OPTIONS,
   LIVE_VIEWER_PROFILE_READ_TIMEOUT_MS,
   liveViewerProfileGateRequired,
@@ -234,6 +237,30 @@ describe("profile read", () => {
     const pending = fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", signal: controller.signal, fetchImpl: hangingFetch });
     controller.abort();
     await expect(pending).resolves.toEqual({ status: "error" });
+  });
+});
+
+describe("admission renewal keeps an open room open", () => {
+  const scope = "vendor:live";
+  const state = (status: ProfileState["status"]): ProfileState => ({ scope, status, profile: null, suggestedNickname: null });
+
+  it("keeps ready, deferred and error states while a later read runs", () => {
+    for (const status of ["ready", "deferred", "error"] as const) expect(keepsOpenRoom(state(status), scope), status).toBe(true);
+    for (const status of ["idle", "loading", "unavailable"] as const) expect(keepsOpenRoom(state(status), scope), status).toBe(false);
+    expect(keepsOpenRoom(state("error"), "other:scope")).toBe(false);
+  });
+
+  it("does not reopen the gate when a viewer whose first read failed now reads no profile", () => {
+    const next = readyReadState(scope, null, "訪客 1234")(state("error"));
+    expect(next.status).toBe("deferred");
+    expect(next.suggestedNickname).toBe("訪客 1234");
+    expect(readyReadState(scope, null, null)(state("deferred")).status).toBe("deferred");
+  });
+
+  it("still gates a viewer on a first read with no profile, and readies a found profile", () => {
+    expect(readyReadState(scope, null, null)(state("loading")).status).toBe("ready");
+    const profile = { nickname: "小明", avatarSeed: "s", avatarUrl: "u" };
+    expect(readyReadState(scope, profile, null)(state("error"))).toMatchObject({ status: "ready", profile });
   });
 });
 

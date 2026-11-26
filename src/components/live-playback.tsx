@@ -11,7 +11,6 @@ import { useLiveWindowPlayback } from "@/components/live-window-playback";
 import { LiveChatPanel, type LiveChatPanelProps } from "@/components/live-chat-panel";
 import { LiveViewerProfileLayer, useLiveViewerProfileGate } from "@/components/live-viewer-profile";
 import {
-  EVERGREEN_DISCLOSURE,
   EvergreenEndedNotice,
   EvergreenPreparingNotice,
   evergreenCountdownLabel,
@@ -328,7 +327,7 @@ function LiveWaitingRoom({ live, countdownSeconds }: { live: LivePageData; count
         <p className="rounded-2xl bg-white/10 px-4 py-3 text-lg font-black" aria-live="polite">
           {evergreen ? evergreenCountdownLabel(countdownSeconds) : waitingCountdownLabel(countdownSeconds)}
         </p>
-        <p className="text-xs leading-5 text-white/55">{evergreen ? `${EVERGREEN_DISCLOSURE}開始前不會載入播放來源。` : "直播開始前不會建立直播容量連線，也不會載入播放來源。"}</p>
+        <p className="text-xs leading-5 text-white/55">直播開始前不會建立直播容量連線，也不會載入播放來源。</p>
       </div>
     </div>
   );
@@ -528,13 +527,14 @@ function LiveBrandHeader({ live, runtimeState }: { live: LivePageData; runtimeSt
   const statusLabel = runtimeState === "unavailable"
     ? live.evergreen?.roomState === "ended" ? "場次已結束" : "目前不可觀看"
     : runtimeState === "waiting"
-      ? live.evergreen ? "場次即將開始" : "即將直播"
+      ? "即將直播"
       : runtimeState === "replay"
         ? "精彩回放"
-        // An evergreen session is a recording; never label it as a live broadcast.
-        // Otherwise follow the derived runtime state: a scheduled VOD keeps
-        // `live.status === "scheduled"` after it starts playing.
-        : live.evergreen ? "預錄場次播放中" : "直播中";
+        // D-47: viewers see no pre-recorded / scripted wording, so an evergreen
+        // session reads the same as a live one. Follow the derived runtime
+        // state: a scheduled VOD keeps `live.status === "scheduled"` after it
+        // starts playing.
+        : "直播中";
   return (
     <header className="relative z-10 flex items-center justify-between gap-3 p-4">
       <div className="flex min-w-0 items-center gap-3 rounded-full bg-black/35 px-3 py-2 backdrop-blur-md">
@@ -1048,7 +1048,7 @@ function ProductSpotlightCard({
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-black text-slate-950">腳本推薦</span>
+          <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-black text-slate-950">推薦商品</span>
           <span className="text-xs text-slate-600">{secondsLabel(event.triggerSec)}</span>
         </div>
         <div className="flex items-center gap-1">
@@ -1084,7 +1084,6 @@ export function ScriptedInteractionOverlay({
   latestCtaEvent,
   latestProductEvent,
   spotlightProduct,
-  hasScriptedEvents,
   isSubmittingCheckout,
   spotlightCardState = "expanded",
   onSpotlightStateChange = () => undefined,
@@ -1094,7 +1093,6 @@ export function ScriptedInteractionOverlay({
   latestCtaEvent: LiveInteractionEvent | undefined;
   latestProductEvent: LiveInteractionEvent | undefined;
   spotlightProduct: LiveProduct | undefined;
-  hasScriptedEvents: boolean;
   isSubmittingCheckout: boolean;
   spotlightCardState?: SpotlightCardState;
   onSpotlightStateChange?: (state: SpotlightCardState) => void;
@@ -1107,11 +1105,10 @@ export function ScriptedInteractionOverlay({
         <button
           type="button"
           onClick={trackCta}
-          aria-label={`商家預設腳本導購：${latestCtaEvent.ctaLabel}`}
+          aria-label={latestCtaEvent.ctaLabel ?? undefined}
           className="mb-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-700 px-4 py-3 text-sm font-black text-white shadow-2xl shadow-orange-950/40 hover:bg-orange-800"
         >
           <Megaphone size={17} aria-hidden="true" />
-          <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] tracking-wide">商家腳本</span>
           <span>{latestCtaEvent.ctaLabel}</span>
         </button>
       ) : null}
@@ -1121,11 +1118,6 @@ export function ScriptedInteractionOverlay({
           isSubmittingCheckout={isSubmittingCheckout} onStateChange={onSpotlightStateChange} trackProduct={trackProduct} />
       ) : null}
 
-      <p className="mb-2 rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-[11px] leading-4 text-white/85 backdrop-blur-md">
-        {hasScriptedEvents
-          ? "部分互動為商家預先設定的腳本，不代表即時真人留言、真實購買或觀看人數。"
-          : "目前沒有商家預設互動腳本，頁面不會模擬真人留言或購買行為。"}
-      </p>
     </>
   );
 }
@@ -1495,7 +1487,6 @@ function LivePlaybackExperience({
           {live.accentCopy ? <span className="rounded-full bg-orange-700/95 px-3 py-1 text-xs font-bold shadow-lg shadow-orange-950/30">{live.accentCopy}</span> : null}
           {referralCode ? <span className="rounded-full bg-blue-500/90 px-3 py-1 text-xs font-bold">來源 {referralCode}</span> : null}
         </div>
-        {live.evergreen ? <p className="mb-2 rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-[11px] leading-4 text-white/85 backdrop-blur-md">{EVERGREEN_DISCLOSURE}</p> : null}
         {consultationEvent ? (
           <button type="button" onClick={() => onPanelChange("form")} aria-controls={visiblePanel === "form" ? "live-playback-panel" : undefined}
             className="mb-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-blue-700 px-4 py-3 text-sm font-black text-white shadow-2xl hover:bg-blue-800">
@@ -1508,7 +1499,6 @@ function LivePlaybackExperience({
           latestCtaEvent={latestCtaEvent}
           latestProductEvent={latestProductEvent}
           spotlightProduct={spotlightCardProduct}
-          hasScriptedEvents={live.interactionEvents.length > 0 || (live.scheduledMessages?.length ?? 0) > 0}
           isSubmittingCheckout={checkoutNavigation.isLocked}
           spotlightCardState={spotlightCardState}
           onSpotlightStateChange={onSpotlightStateChange}

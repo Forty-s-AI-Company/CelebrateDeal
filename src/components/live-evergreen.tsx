@@ -323,6 +323,3 @@ export function EvergreenEndedNotice({
     </div>
   );
 }
-
-/** Honest disclosure: an evergreen session is a pre-recorded video, not a live broadcast. */
-export const EVERGREEN_DISCLOSURE = "本場為預先錄製的影片，依你的場次時間自動播放，不是即時直播。";

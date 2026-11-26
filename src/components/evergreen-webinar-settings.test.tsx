@@ -25,7 +25,7 @@ describe("EvergreenWebinarSettings", () => {
     expect(html).toContain("專屬場次");
     expect(html).toContain("無法快轉或加速");
     expect(html).toContain("才由伺服器送出");
-    expect(html).toContain("不會宣稱為即時直播");
+    expect(html).toContain("不另標預錄");
     expect(html).toContain("所有觀眾共用這一個開場時間");
     // Enabling evergreen ignores the original scheduledAt and turns shared interactions off.
     expect(html).toContain("不再使用這場直播原本設定的開播時間");
