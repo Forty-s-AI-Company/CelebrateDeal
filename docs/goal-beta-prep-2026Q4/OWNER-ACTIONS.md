@@ -9,7 +9,7 @@
 - **O-16／B-5**：封測期間 staging 維持 Hobby，正式上線前與 Production 一起升 Pro。
 - **O-17／B-6**：沿用 Sentry `celebratedeal` 專案預設的「high priority issues → Email」規則，不另建。
 - **O-7**：**否**。`carry-digital-nomad.in.net` 的 NS 在 Spaceship，A 記錄直指 Vercel，Cloudflare 帳號內沒有網域。Cloudflare WAF rate rule 不適用，改由應用層處理（work-queue A4-03）。
-- **Stream 簽章金鑰**：staging 已設 `CLOUDFLARE_STREAM_SIGNING_KEY_ID`、`CLOUDFLARE_STREAM_SIGNING_KEY_PEM`（Preview），`CLOUDFLARE_STREAM_CUSTOMER_CODE` 未設（選填）。建立過程多建了一把未使用的 key，之後輪替時一併 `DELETE /stream/keys/{id}`。尚未鎖定任何影片。**2026-11-26：鎖定後 Cloudflare 回 401 failed to verify signature，KEY_ID 與 PEM 不成對；已回滾，請執行 `scripts/staging-stream-signing-key-reset.ps1` 重建（id 與 pem 同一次回應一起寫入）。**
+- **Stream 簽章金鑰**：staging 已設 `CLOUDFLARE_STREAM_SIGNING_KEY_ID`、`CLOUDFLARE_STREAM_SIGNING_KEY_PEM`（Preview），`CLOUDFLARE_STREAM_CUSTOMER_CODE` 未設（選填）。建立過程多建了一把未使用的 key，之後輪替時一併 `DELETE /stream/keys/{id}`。尚未鎖定任何影片。**2026-11-26：鎖定後 Cloudflare 回 401 failed to verify signature，KEY_ID 與 PEM 不成對；已回滾，請執行 `scripts/staging-stream-signing-key-reset.ps1` 重建（id 與 pem 同一次回應一起寫入）。** **2026-11-26 更新：owner 已重建金鑰；staging 重新鎖定 WP4 合成商家影片，修正續期未套用新 token 的 bug（#725）後 run 45731280971 full PASS。Cloudflare 現有 2 把未使用的 Stream key（原本多建的一把＋重建時失敗那次留下的一把），之後輪替時一併刪除。Production 尚未鎖定，鎖定前需再問 owner。**
 - **B-8**：Cloudflare AI 金鑰暫緩到 AI 助理動工。
 - **D 段十項決定全部照建議**：R-10 刪除模式同意但先備份；做折扣碼，佣金以折扣後實付金額計算；Email 序列寄送上限待第一個商家開通前再定；常青場課後信只寄給看過的人；不綁直播的序列與 LINE 步驟、多方案／買家訂閱、自訂網域都等封測後；安全警示先用 GitHub 通知信；買家可見的 AI 內容加標示；正式站自動補單先在 staging Sandbox 實測成功再開；本機 `celebratedeal_test` 已重建（2026-11-23，空資料庫，下次使用時再 migrate）。
 
