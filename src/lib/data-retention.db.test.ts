@@ -78,7 +78,7 @@ describe("purgeExpiredData (PostgreSQL)", () => {
 
       // Idempotent: a second run leaves already-purged payloads unchanged.
       const second = await purgeExpiredData(tx, { now: new Date(now.getTime() + 1_000), policy });
-      expect(second).toMatchObject({ webhookPayloadsPurged: 0, analyticsEventsDeleted: 0, auditLogIpsCleared: 0, remaining: false });
+      expect(second).toMatchObject({ webhookPayloadsPurged: 0, analyticsEventsDeleted: 0, auditLogIpsCleared: 0, liveViewerProfilesDeleted: 0, remaining: false });
       expect((await tx.webhookEvent.findUniqueOrThrow({ where: { id: oldProcessed.id } })).payload).toEqual(purged.payload);
     });
   });

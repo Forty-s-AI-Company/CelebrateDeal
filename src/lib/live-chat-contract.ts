@@ -40,7 +40,10 @@ export type ViewerRuntimeMessage = {
   createdAt: string;
   body: string;
   actor: {
+    /** The viewer's nickname in this live, else the registration name. */
     name: string;
+    /** One of the preset avatar URLs the viewer picked; absent without one. */
+    avatarUrl?: string;
   };
 };
 

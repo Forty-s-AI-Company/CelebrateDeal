@@ -21,6 +21,7 @@ import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 import { openLiveStudioAdvancedSettings } from "../fixtures/live-studio";
 import { formatSanitizedAxeBlockingError } from "../../scripts/playwright-ci-reporter";
 import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
+import { enterLiveWithNickname } from "./helpers/live-viewer-nickname";
 
 const db = new PrismaClient();
 const runId = randomUUID().replace(/-/g, "");
@@ -1707,6 +1708,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await page.setViewportSize({ width: 1280, height: 900 });
     const response = await page.goto(`/live/${fixture.foreignLiveSlug}`);
     expect(response?.status()).toBe(200);
+    await enterLiveWithNickname(page);
     const video = page.locator("video");
     await expect(video).toBeVisible();
     await expect(video).toHaveJSProperty("controls", false); // live window: no seek bar or native play button
@@ -1792,6 +1794,8 @@ test("desktop merchant can recover upload and validation errors, then publish an
       throw new Error(`PUBLIC_LIVE:NAVIGATION:HTTP:${liveResponse.status()}`);
     }
     expect(liveResponse?.status()).toBe(200);
+    // The room has chat, so the live video loads only after the nickname step.
+    await enterLiveWithNickname(page);
     const video = page.locator("video");
     await expect(video).toBeVisible();
     // Inside the live window there is no VOD-style play/pause or seek UI.
@@ -1945,6 +1949,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await page.setViewportSize({ width: 1280, height: 900 });
     const response = await page.goto(`/live/${fixture.foreignLiveSlug}`);
     expect(response?.status()).toBe(200);
+    await enterLiveWithNickname(page);
     const video = page.locator("video");
     await expect(video).toBeVisible();
     await expect(video).toHaveJSProperty("controls", false); // live window: no seek bar or native play button

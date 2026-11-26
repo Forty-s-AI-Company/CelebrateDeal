@@ -6,6 +6,7 @@ import { formatPrivateInboxDiagnostic } from "../../scripts/private-inbox-diagno
 import { startPrivateChatLoopbackIngress } from "../../scripts/live-private-loopback-ingress.mjs";
 import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "../../src/lib/form-submission-chat-session";
 import { seedBetaAgreementForLogin } from "./helpers/beta-agreement";
+import { enterLiveWithNickname } from "./helpers/live-viewer-nickname";
 
 test.use({ baseURL: "http://127.0.0.1:31044", trace: "off", screenshot: "off", video: "off" });
 test.setTimeout(120_000);
@@ -45,6 +46,7 @@ test("verified viewer and actual instructor exchange private messages; other vie
       const admission = viewer.waitForResponse(response => new URL(response.url()).pathname === "/api/live-admission" && response.request().method() === "POST");
       await viewer.goto(`/live/${live.slug}`);
       expect((await admission).status()).toBe(200);
+      await enterLiveWithNickname(viewer);
       await viewer.locator("summary").filter({ hasText: "講師私訊" }).click();
       await expect(viewer.getByRole("textbox", { name: "私人訊息" })).toBeEnabled();
       viewers.push({ page: viewer, submission });

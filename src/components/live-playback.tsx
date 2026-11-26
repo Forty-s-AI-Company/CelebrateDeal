@@ -8,7 +8,8 @@ import { LeadForm } from "@/components/lead-form";
 import { LiveMediaReceiver } from "@/components/live-media-receiver";
 import { canUseLiveAdvancedInteractions, LiveAdvancedInteractions } from "@/components/live-advanced-interactions";
 import { useLiveWindowPlayback } from "@/components/live-window-playback";
-import { LiveChatPanel } from "@/components/live-chat-panel";
+import { LiveChatPanel, type LiveChatPanelProps } from "@/components/live-chat-panel";
+import { LiveViewerProfileLayer, useLiveViewerProfileGate } from "@/components/live-viewer-profile";
 import {
   EVERGREEN_DISCLOSURE,
   EvergreenEndedNotice,
@@ -1447,6 +1448,7 @@ function LivePlaybackExperience({
   isPlaybackPaused,
   canControlPlayback,
   liveControls,
+  viewerProfile,
 }: {
   live: LivePageData;
   currentSeconds: number;
@@ -1472,6 +1474,7 @@ function LivePlaybackExperience({
   canControlPlayback: boolean;
   /** Replaces the play/pause toggle while the broadcast is inside its live window. */
   liveControls?: ReactNode;
+  viewerProfile?: LiveChatPanelProps["viewerProfile"];
 }) {
   const productsAvailable = Boolean(latestProductEvent && spotlightCardProduct);
   // A seek or a refreshed timeline can move before the timed offer. Keep the
@@ -1522,6 +1525,7 @@ function LivePlaybackExperience({
             liveId={live.id}
             scheduledMessages={scheduledMessages}
             onAdmissionInvalid={onAdmissionInvalid}
+            viewerProfile={viewerProfile}
             started={getClientRuntimeState(live) !== "waiting"}
           />
         </div>
@@ -1798,17 +1802,31 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     refreshKey: admissionRefreshKey,
   });
   const visibleAdmissionStatus: LiveAdmissionStatus = isPlayableRuntime ? admissionStatus : "admitted";
+  // Owner 2026-11-26: an admitted viewer of a room with chat sets a nickname
+  // and avatar before the live video loads; replay only asks when posting.
+  // While that gate is open the player treats the viewer as not yet
+  // admitted: no playback source request, no autoplay and no controls.
+  const profileGate = useLiveViewerProfileGate({
+    vendorId: live.vendorId,
+    liveId: live.id,
+    runtimeState,
+    admissionRequired: live.admissionRequired === true,
+    chatEnabled: live.chatEnabled === true,
+    admissionStatus,
+  });
+  const playbackAdmissionStatus = profileGate.playbackAdmissionStatus;
+  const visiblePlaybackAdmissionStatus: LiveAdmissionStatus = isPlayableRuntime ? playbackAdmissionStatus : "admitted";
   const visiblePlaybackSource = useLivePlaybackSource({
     ...live,
     admissionRequired: isPlayableRuntime && live.admissionRequired === true,
-  }, admissionStatus);
+  }, playbackAdmissionStatus);
   const playableSource = !isPlayableRuntime || streamQuotaExhausted ? null : visiblePlaybackSource;
   const playableUrl = playableSource?.playbackUrl ?? null;
   const playbackMedia = playbackMediaProps(playableSource, playableUrl, isCheckoutOverlay);
   const playbackSourceState = playbackSourceStatus({
     streamQuotaExhausted,
     isPlayableRuntime,
-    admissionStatus,
+    admissionStatus: playbackAdmissionStatus,
     hasPlayableSource: Boolean(playableSource),
   });
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -1829,7 +1847,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
   const liveWindow = useLiveWindowPlayback({
     runtimeState,
     isPlayableRuntime,
-    admitted: visibleAdmissionStatus === "admitted",
+    admitted: visiblePlaybackAdmissionStatus === "admitted",
     streamQuotaExhausted,
     evergreenLocked: evergreenPlayback.locked,
     isBrowserStream: isBrowserStreamSource(playableSource),
@@ -1956,7 +1974,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               src={playbackMedia.src}
               // A locked evergreen session has no seek bar; the guard below
               // also pulls back keyboard or script seeks and rate changes.
-              controls={nativeControlsAllowed(visibleAdmissionStatus, [streamQuotaExhausted, evergreenPlayback.locked, liveWindow.active])}
+              controls={nativeControlsAllowed(visiblePlaybackAdmissionStatus, [streamQuotaExhausted, evergreenPlayback.locked, liveWindow.active])}
               aria-describedby={streamQuotaExhausted ? "stream-quota-alert" : undefined}
               playsInline
               poster={live.heroImageUrl ?? undefined}
@@ -2031,8 +2049,9 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               onAdmissionInvalid={refreshAdmission}
               playbackVideoRef={videoRef}
               isPlaybackPaused={isPlaybackPaused}
-              canControlPlayback={canControlOverlayPlayback(hasPlaybackVideo, visibleAdmissionStatus, liveWindow.active)}
+              canControlPlayback={canControlOverlayPlayback(hasPlaybackVideo, visiblePlaybackAdmissionStatus, liveWindow.active)}
               liveControls={liveWindow.controls}
+              viewerProfile={profileGate.chat}
             />
           ) : (
             <LiveIdleState live={live} runtimeState={runtimeState} countdownSeconds={waitingCountdownSeconds} evergreenPlayback={evergreenPlayback} />
@@ -2045,6 +2064,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
             resumesOnCancel={liveWindow.active}
           />
           <LiveAdmissionOverlay status={visibleAdmissionStatus} />
+          <LiveViewerProfileLayer dialog={profileGate.dialog} />
         </HideDuringCheckout>
       </section>
     </main>

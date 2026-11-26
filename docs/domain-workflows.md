@@ -19,6 +19,21 @@
 
 區分 live、scheduled prerecorded、VOD、preview 與 published；區分 visitor、lead、click、checkout、paid、refund、commission、payout。官方／AI／system 互動角色與腳本化虛擬使用者只存在於觀眾端聊天室（2026-10-18 owner 決策，允許不標示的虛擬觀眾帳號）；它們的發言、觀看與互動不得計入商家後台的報名、訂單、付款、成效統計或任何 conversion。外部 storefront 流程依序使用有效 promoter URL、vendor default URL、click event；只有 API、webhook、核准匯入或 reconciliation 的訂單證據可計入 conversion。
 
+### 觀眾暱稱與頭像（2026-11-26）
+
+有聊天室（綁定有效報名表）的直播，觀眾入場（admission 成功）後、影片載入前要先設定暱稱與頭像；設定綁在長效 profile cookie 上，同一場再進來不再問，可在聊天區「更改」。回放不強制，要留言時才請他設定。已驗證的報名者預填報名姓名。讀取 profile 失敗或 6 秒逾時都不擋觀看（fail-open），留言退回報名姓名。在關卡送出暱稱時，只有名稱不合法（400）或已被使用（409）會留在視窗改名；其他失敗（建立上限、限流、伺服器或網路錯誤、逾時）一律放行，之後可在聊天區「設定暱稱」。
+
+**暱稱關卡不是安全控制**：它只是顯示用的名字，不證明身分、不給權限；擋入場只在前端，伺服器的播放來源不檢查暱稱。留言門檻仍是已驗證 Email 的報名。
+
+- 暱稱 1–20 字，不可只有空白、不可含網址、控制字元或 3 個以上連續組合符號（emoji 的 ZWJ／ZWNJ 可用）；同一場直播（liveId，各場次共用一個聊天室）內不可與其他觀眾暱稱、這場綁定腳本中啟用角色的名稱、商家名稱、「觀眾」，或近 7 天在這場仍以報名姓名顯示的留言作者重複（NFKC、大小寫、全半形與空白都不分）。重複時回「這個名稱已經有人使用，請換一個」。觀眾 7 天沒活動後，別人可以取走他的名字。
+- 商家黑名單：被 email／phone／IP／visitor id 封鎖的觀眾照常看直播，但不出現暱稱關卡、聊天唯讀（伺服器只回「無法設定」，不說哪一種封鎖）。暱稱命中關鍵字回「這個名稱無法使用，請換一個」。
+- 顯示：從沒設暱稱的留言顯示報名姓名；暱稱被釋放或被保留期刪除的舊留言顯示「觀眾」，不退回報名姓名；只有懲罰情境（暱稱命中關鍵字，或作者 email／phone 被封鎖）退回報名姓名（報名姓名也命中關鍵字時顯示「觀眾」）。IP／visitor id 封鎖不會回溯降級舊留言的暱稱；舊留言的降級只在下一次輪詢或重新載入時生效。
+- 濫用限制：每個入場 session 在一場直播最多建立 3 個暱稱 profile，另外每個 IP 每場直播每小時最多 300 個（超過回 429；在關卡遇到時直接放行觀看）。
+- 保留期：直播結束且回放關閉 30 天（結束時間依 runtime 規則補寫）、或 profile 本身 180 天沒活動（常青場）後，由資料保留排程刪除，留言保留並顯示「觀眾」。
+- 頭像只能從 20 個預設頭像（與虛擬角色相同的 DiceBear 預設）選，不開放上傳。
+- `LiveChatMessage.authorName` 仍是報名姓名；商家聊天匯出多一欄 `nickname`，統計不變，暱稱不進任何成效統計。虛擬角色訊息也畫頭像，標示規則不變。
+- 契約見 [API 契約](codex-goal/API_CONTRACT_REGISTRY.md) 的 `/api/live-viewer-profile` 與 [Prisma 不變量](codex-goal/PRISMA_INVARIANTS.md) 的 `20261126100000_live_viewer_profiles`。
+
 ### 指定場次（fixed sessions）
 
 一場預錄直播（VOD、非常青、影片長度已知）可設多個開播時間（`Live.sessionMode = fixed_sessions`，`LiveSession` 列）。權威資料與規則：

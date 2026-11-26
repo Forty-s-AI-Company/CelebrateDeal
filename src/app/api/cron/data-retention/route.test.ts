@@ -14,7 +14,7 @@ const request = (method: "GET" | "POST", secret?: string) => new Request("https:
   method,
   headers: secret ? { authorization: `Bearer ${secret}` } : undefined,
 });
-const counts = { webhookPayloadsPurged: 3, analyticsEventsDeleted: 5, auditLogIpsCleared: 7, remaining: false };
+const counts = { webhookPayloadsPurged: 3, analyticsEventsDeleted: 5, auditLogIpsCleared: 7, liveViewerProfilesDeleted: 2, remaining: false };
 
 beforeEach(() => {
   vi.resetAllMocks();
