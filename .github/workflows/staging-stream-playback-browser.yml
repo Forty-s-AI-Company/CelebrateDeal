@@ -9,9 +9,12 @@ name: Staging Stream signed playback browser
 # form submission or email.
 #
 # Scenario manual (owner Safari / iPhone check): reuses the same binding, owner session and fixtures,
-# creates one replay Live whose replay stays available for manual_hours (default 48), plays nothing,
-# does not delete the Live, and prints one `stream_playback_manual=` line with the public live page
-# URL (a public viewer page; no token, cookie or signed URL). The WebKit job is skipped.
+# creates one Live with a recognisable demo video (elapsed time as big text + a beep every 10 s),
+# plays nothing, does not delete the Live, and prints one `stream_playback_manual=` line with the public
+# live page URL (a public viewer page; no token, cookie or signed URL). manual_mode live (default)
+# schedules the Live ~3 minutes ahead so the page counts down, starts by itself as a live window and
+# later becomes a replay kept for manual_hours after the video ends; replay makes an already finished
+# replay kept for manual_hours after creation. The WebKit job is skipped.
 #
 # The WebKit job is Playwright WebKit on macOS: evidence for that engine only. Safari is always
 # reported NOT_COVERED (Playwright WebKit is not Safari, and the app prefers hls.js wherever
@@ -37,10 +40,18 @@ on:
           - quick
           - manual
       manual_hours:
-        description: manual scenario only - hours the replay stays available after creation (1-72)
+        description: manual scenario only - hours the replay stays available (live mode - after the video ends; replay mode - after creation) (1-72)
         required: false
         default: "48"
         type: string
+      manual_mode:
+        description: manual scenario only - live schedules the demo video to start by itself in ~3 minutes and play as a live window (countdown, joins at current progress, no pause or seek, then becomes a replay); replay creates an already finished replay
+        required: false
+        default: live
+        type: choice
+        options:
+          - live
+          - replay
       webkit:
         description: Also run the Playwright WebKit evidence job on macOS (quick scenario; ignored for manual)
         required: true
@@ -69,6 +80,7 @@ jobs:
       CELEBRATEDEAL_STREAM_VIEWER_BROWSER: chromium
       CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: ${{ inputs.scenario }}
       CELEBRATEDEAL_STREAM_MANUAL_HOURS: ${{ inputs.manual_hours }}
+      CELEBRATEDEAL_STREAM_MANUAL_MODE: ${{ inputs.manual_mode }}
     steps:
       - name: Checkout protected Stream playback runner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -5,7 +5,7 @@ import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
 import { elementHydratedInPage, HYDRATION_TIMEOUT_MS } from "./staging-browser-hydration.mjs";
 import { validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 import {
-  ORIGIN, FIXTURE, STEPS,
+  ORIGIN, FIXTURE, STEPS, videoFixtureFor, manualLiveSchedule,
   assessNewTokenUse, assessPlaybackProgress, assessRecovery, assessReplayTokenExp, classifyError, classifyPlayerPath, createTokenAttribution,
   classifyRequest, classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims,
   finalVerdict, formatReceiptLines, isStreamDeliveryHost, receiptLeaks, renewalDelaySeconds,
@@ -275,6 +275,8 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
   const receipt = createReceipt(env);
   const { viewerBrowser, scenario } = receipt;
   if (scenario === "manual" && receipt.manualHours === null) { receipt.reason = "INVALID_MANUAL_HOURS"; return receipt; }
+  if (scenario === "manual" && receipt.manualMode === null) { receipt.reason = "INVALID_MANUAL_MODE"; return receipt; }
+  const VIDEO = videoFixtureFor(scenario);
   const skipped = skippedStepsFor(viewerBrowser, scenario);
   for (const step of skipped) setStep(receipt, step, "SKIPPED");
   if (!validateBrowserSmokeBinding(env)
@@ -415,7 +417,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
   };
 
   const run8 = randomUUID().replaceAll("-", "").slice(0, 8);
-  const fixture = { videoId: null, liveId: null, liveSlug: null, scriptId: null, deadline: null };
+  const fixture = { videoId: null, liveId: null, liveSlug: null, scriptId: null, deadline: null, startsAt: null };
 
   try {
     currentStep = "OWNER_SESSION";
@@ -444,14 +446,14 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
       };
     };
     const listFixtureVideoIds = async () => {
-      await owner.goto(`${ORIGIN}/videos?q=${encodeURIComponent(FIXTURE.videoTitle)}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await owner.goto(`${ORIGIN}/videos?q=${encodeURIComponent(VIDEO.videoTitle)}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
       return owner.locator("article").evaluateAll((articles, title) => articles
         .filter((article) => article.querySelector("h2")?.textContent?.trim() === title)
         .map((article) => {
           const href = article.querySelector('a[href^="/videos/"][href$="/edit"]')?.getAttribute("href") ?? "";
           return decodeURIComponent(href.split("/")[2] ?? "");
         })
-        .filter((id) => /^[A-Za-z0-9_-]{1,128}$/u.test(id)), FIXTURE.videoTitle);
+        .filter((id) => /^[A-Za-z0-9_-]{1,128}$/u.test(id)), VIDEO.videoTitle);
     };
 
     await step("FIXTURE_VIDEO", async () => {
@@ -460,12 +462,12 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
       // may never finish (an unfinished direct upload stays 404 at Cloudflare), so it is not awaited.
       for (const id of await listFixtureVideoIds()) {
         const state = await videoStatus(id);
-        if (state?.ready && state.durationSec >= FIXTURE.videoDurationSeconds - 60) { fixture.videoId = id; break; }
+        if (state?.ready && state.durationSec >= VIDEO.videoDurationSeconds - 60) { fixture.videoId = id; break; }
       }
       if (fixture.videoId) { receipt.fixture.videoReused = true; return; }
-      const bytes = await readFile(new URL(`./${FIXTURE.videoFile}`, import.meta.url));
-      ensure(bytes.length === FIXTURE.videoBytes
-        && createHash("sha256").update(bytes).digest("hex") === FIXTURE.videoSha256, "FIXTURE_REJECTED");
+      const bytes = await readFile(new URL(`./${VIDEO.videoFile}`, import.meta.url));
+      ensure(bytes.length === VIDEO.videoBytes
+        && createHash("sha256").update(bytes).digest("hex") === VIDEO.videoSha256, "FIXTURE_REJECTED");
       await owner.goto(`${ORIGIN}/videos/new`, { waitUntil: "domcontentloaded", timeout: 30_000 });
       const csrf = await owner.locator('input[name="_csrf"]').first().inputValue({ timeout: 15_000 });
       ensure(csrf.length > 0, "CSRF_MISSING");
@@ -473,7 +475,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
         method: "POST",
         headers: { ...CLIENT_HEADERS, "content-type": "application/json", "x-csrf-token": csrf },
         body: JSON.stringify({
-          title: FIXTURE.videoTitle, fileName: "staging-stream-fifty-five-minutes.mp4", mimeType: "video/mp4",
+          title: VIDEO.videoTitle, fileName: VIDEO.uploadFileName, mimeType: "video/mp4",
           sizeBytes: bytes.length, maxDurationSeconds: 3600,
         }),
       });
@@ -481,7 +483,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
         && created.body?.method === "POST" && validUploadUrl(created.body?.uploadUrl), "UPLOAD_SETUP_REJECTED");
       fixture.videoId = created.body.videoId;
       const form = new FormData();
-      form.set("file", new Blob([bytes], { type: "video/mp4" }), "staging-stream-fifty-five-minutes.mp4");
+      form.set("file", new Blob([bytes], { type: "video/mp4" }), VIDEO.uploadFileName);
       receipt.sideEffects.videoUploads += 1;
       // Only the provider's one-time upload URL receives the file; no app credential is sent.
       const uploaded = await fetchImpl(created.body.uploadUrl, { method: "POST", body: form, redirect: "manual", signal: AbortSignal.timeout(120_000) });
@@ -495,7 +497,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
       let lastSync = 0;
       while (now() < readyDeadline) {
         const state = await videoStatus(fixture.videoId);
-        if (state?.ready && state.durationSec >= FIXTURE.videoDurationSeconds - 60) break;
+        if (state?.ready && state.durationSec >= VIDEO.videoDurationSeconds - 60) break;
         ensure(!state || state.status !== "error", "VIDEO_PROVIDER_ERROR");
         if (now() - uploadedAt > 5 * 60_000 && now() - lastSync > 60_000) {
           lastSync = now();
@@ -511,7 +513,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
         await wait(15_000);
       }
       const final = await videoStatus(fixture.videoId);
-      ensure(final?.ready && final.durationSec >= FIXTURE.videoDurationSeconds - 60, "VIDEO_NOT_READY");
+      ensure(final?.ready && final.durationSec >= VIDEO.videoDurationSeconds - 60, "VIDEO_NOT_READY");
       receipt.fixture.videoReadyWaitSeconds = Math.round((now() - uploadedAt) / 1_000);
     });
 
@@ -567,7 +569,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
         await owner.locator('input[name="name"]').fill(FIXTURE.formName);
         await owner.locator('input[name="slug"]').fill(FIXTURE.formSlug);
         await owner.locator('input[name="headline"]').fill(FIXTURE.formHeadline);
-        ensure(await selectOptionByText(owner.locator('select[name="promoVideoId"]'), FIXTURE.videoTitle), "PROMO_VIDEO_OPTION");
+        ensure(await selectOptionByText(owner.locator('select[name="promoVideoId"]'), VIDEO.videoTitle), "PROMO_VIDEO_OPTION");
         await owner.getByRole("button", { name: "儲存表單", exact: true }).click({ timeout: 10_000 });
         await owner.waitForURL((url) => url.pathname === "/forms", { timeout: 30_000 });
         receipt.sideEffects.formCreates += 1;
@@ -647,14 +649,19 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
         : `${FIXTURE.liveTitlePrefix} ${run8}`);
       for (let tries = 0; tries < 20 && (await owner.locator("input#live-slug").inputValue()) === ""; tries += 1) await wait(250);
       await owner.locator('select[name="streamMode"]').selectOption("vod");
-      ensure(await selectOptionByText(owner.locator('select[name="videoId"]'), FIXTURE.videoTitle), "LIVE_VIDEO_OPTION");
+      ensure(await selectOptionByText(owner.locator('select[name="videoId"]'), VIDEO.videoTitle), "LIVE_VIDEO_OPTION");
       ensure(await selectOptionByText(owner.locator('select[name="formId"]'), FIXTURE.formName), "LIVE_FORM_OPTION");
-      // Natural VOD completion two days ago: the Live is in replay as soon as it exists.
-      await owner.locator('input[name="scheduledAt"][type="datetime-local"]').fill(taipeiDateTimeLocal(new Date(now() - 2 * 24 * 60 * 60_000)));
+      // Replay (and full/quick): natural VOD completion two days ago, so the Live is in replay as soon as it
+      // exists. Manual live: scheduled shortly ahead, so the public page counts down, starts the pre-recorded
+      // video by itself as a live window and only afterwards becomes a replay.
+      const manualLive = scenario === "manual" && receipt.manualMode === "live"
+        ? manualLiveSchedule(now(), receipt.manualHours ?? undefined, VIDEO.videoDurationSeconds) : null;
+      await owner.locator('input[name="scheduledAt"][type="datetime-local"]').fill(taipeiDateTimeLocal(manualLive?.startsAt ?? new Date(now() - 2 * 24 * 60 * 60_000)));
       const replay = owner.locator('input[name="replayEnabled"]');
       if (!await replay.isChecked()) await replay.check();
       await owner.locator('details[data-advanced-settings="content"]').evaluate((element) => { element.open = true; });
-      fixture.deadline = replayDeadline(now(), replayDeadlineMinutes(scenario, receipt.manualHours ?? undefined));
+      fixture.deadline = manualLive?.replayUntil ?? replayDeadline(now(), replayDeadlineMinutes(scenario, receipt.manualHours ?? undefined));
+      fixture.startsAt = manualLive?.startsAt ?? null;
       await owner.locator('input[name="replayAvailableUntil"][type="datetime-local"]').fill(taipeiDateTimeLocal(fixture.deadline));
       fixture.liveSlug = await owner.locator("input#live-slug").inputValue();
       ensure(/^[a-z0-9-]{1,120}$/u.test(fixture.liveSlug), "LIVE_SLUG");
@@ -698,6 +705,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
       // Manual: the Live stays for a human to open on a real Safari / iPhone; nothing is played here.
       receipt.manual.liveSlug = fixture.liveSlug;
       receipt.manual.replayUntil = fixture.deadline.toISOString();
+      receipt.manual.startsAt = fixture.startsAt ? fixture.startsAt.toISOString() : null;
     } else {
       const deadlineSeconds = Math.floor(fixture.deadline.getTime() / 1_000);
       const viewerContext = await newContext(viewerBrowserInstance, "viewer", { width: 1280, height: 800 });
@@ -1226,6 +1234,7 @@ export function safeReceiptText(receipt) {
   blocked.viewerBrowser = receipt.viewerBrowser;
   blocked.scenario = receipt.scenario;
   blocked.manualHours = receipt.manualHours ?? null;
+  blocked.manualMode = receipt.manualMode ?? null;
   blocked.reason = "RECEIPT_REDACTION_FAILED";
   return { json: JSON.stringify(blocked), lines: formatReceiptLines(blocked) };
 }
