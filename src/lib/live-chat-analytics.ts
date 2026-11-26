@@ -2,6 +2,8 @@ export const LIVE_CHAT_EXPORT_COLUMNS = [
   "messageId",
   "liveId",
   "actorName",
+  // The viewer's nickname in the room (empty for scripted roles and viewers without one).
+  "nickname",
   "body",
   "source",
   "isSimulated",
@@ -12,6 +14,7 @@ export type LiveChatExportRow = {
   messageId: string;
   liveId: string;
   actorName: string;
+  nickname: string;
   body: string;
   source: "viewer" | "scheduled";
   isSimulated: boolean;
@@ -24,6 +27,7 @@ type ViewerMessageRecord = {
   authorName: string;
   body: string;
   createdAt: Date;
+  viewerProfile?: { nickname: string } | null;
 };
 
 type ScheduledMessageRecord = {
@@ -86,6 +90,7 @@ export function buildLiveChatExportRows(input: {
     messageId: message.id,
     liveId: message.liveId,
     actorName: message.authorName,
+    nickname: message.viewerProfile?.nickname ?? "",
     body: message.body,
     source: "viewer",
     isSimulated: false,
@@ -97,6 +102,7 @@ export function buildLiveChatExportRows(input: {
       messageId: message.id,
       liveId: input.liveId,
       actorName: message.role!.name,
+      nickname: "",
       body: message.message!.trim(),
       source: "scheduled",
       isSimulated: true,

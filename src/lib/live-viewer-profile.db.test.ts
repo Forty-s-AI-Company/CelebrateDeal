@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/lib/db";
 import { createFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { interactionRoleAvatarUrl } from "@/lib/interaction-role";
-import { createViewerChatMessage, listViewerChatMessages } from "@/lib/live-chat";
+import { dataRetentionPolicy, purgeExpiredData } from "@/lib/data-retention";
+import { clearLiveChatBlacklistCache, createViewerChatMessage, listViewerChatMessages, resolveViewerProfileModeration } from "@/lib/live-chat";
 import { hashLiveViewerToken } from "@/lib/live-quota-admission";
 import { readLiveViewerProfile, saveLiveViewerProfile } from "@/lib/live-viewer-profile";
 
@@ -76,7 +77,7 @@ describe("LiveViewerProfile on PostgreSQL", () => {
     // A later visit has a new admission session but the same profile cookie.
     const laterAdmission = await admit(vendor.id, live.id);
     await expect(readLiveViewerProfile(db, { ...scope, admissionToken: laterAdmission, profileToken, now: NOW }))
-      .resolves.toEqual({ nickname: "小明", avatarSeed: "care-teal", avatarUrl: interactionRoleAvatarUrl("care-teal") });
+      .resolves.toEqual({ profile: { nickname: "小明", avatarSeed: "care-teal", avatarUrl: interactionRoleAvatarUrl("care-teal") }, previousNickname: null });
 
     const renamed = await save(scope, laterAdmission, profileToken, "小明 2", "chat-mint");
     expect(renamed.issuedProfileToken).toBeNull();
@@ -107,7 +108,7 @@ describe("LiveViewerProfile on PostgreSQL", () => {
     await expect(save(scope, await admit(vendor.id, live.id), null, "退休角色")).resolves.toBeTruthy();
   });
 
-  it("lets exactly one of two concurrent viewers take the same name", async () => {
+  it("lets exactly one of three concurrent viewers take the same name", async () => {
     const { vendor, live } = await vendorWithLive("race");
     const scope = { vendorId: vendor.id, liveId: live.id };
     const [a, b, c] = await Promise.all([admit(vendor.id, live.id), admit(vendor.id, live.id), admit(vendor.id, live.id)]);
@@ -215,7 +216,11 @@ describe("LiveViewerProfile on PostgreSQL", () => {
       data: { formId: form.id, liveId: live.id, name: "觀眾乙", email: `viewer-${randomUUID()}@example.test`, verificationStatus: "VERIFIED" },
     });
     const role = await db.interactionRole.findFirstOrThrow({ where: { vendorId: vendor.id, isActive: true } });
-    const base = { vendorId: vendor.id, liveId: live.id, viewerKeyHash: "a".repeat(64), nickname: "ok", normalizedNickname: "ok", avatarSeed: "host-blue" };
+    const base = { vendorId: vendor.id, liveId: live.id, viewerKeyHash: "a".repeat(64), createdBySessionHash: "b".repeat(64), nickname: "ok", normalizedNickname: "ok" as string | null, avatarSeed: "host-blue" };
+    await expect(db.liveViewerProfile.create({ data: { ...base, createdBySessionHash: "x" } })).rejects.toThrow();
+    // Released rows (NULL) never collide with each other or with an active holder.
+    await db.liveViewerProfile.create({ data: { ...base, viewerKeyHash: "c".repeat(64), normalizedNickname: null } });
+    await db.liveViewerProfile.create({ data: { ...base, viewerKeyHash: "d".repeat(64), normalizedNickname: null } });
     await expect(db.liveViewerProfile.create({ data: { ...base, nickname: "一".repeat(21) } })).rejects.toThrow();
     await expect(db.liveViewerProfile.create({ data: { ...base, avatarSeed: "https://evil.example/a.png" } })).rejects.toThrow();
     await expect(db.liveViewerProfile.create({ data: { ...base, viewerKeyHash: "not-a-hash" } })).rejects.toThrow();
@@ -234,5 +239,149 @@ describe("LiveViewerProfile on PostgreSQL", () => {
     await db.live.delete({ where: { id: live.id } });
     expect(await db.liveViewerProfile.count({ where: { vendorId: vendor.id } })).toBe(0);
     expect(await db.liveChatMessage.count({ where: { vendorId: vendor.id } })).toBe(0);
+  });
+});
+
+async function verifiedViewer(form: { id: string }, live: { id: string }, name: string) {
+  const submission = await db.formSubmission.create({
+    data: { formId: form.id, liveId: live.id, name, email: `viewer-${randomUUID()}@example.test`, verificationStatus: "VERIFIED" },
+  });
+  return { submission, chatSessionToken: createFormSubmissionChatSessionToken({ submissionId: submission.id, now: new Date(NOW.getTime() - 1_000) }) };
+}
+
+function post(scope: { vendorId: string; liveId: string }, input: { chatSessionToken: string; admissionToken: string; profileToken: string | null; body: string; now?: Date }) {
+  return createViewerChatMessage(db, {
+    ...scope,
+    clientMessageId: randomUUID(),
+    body: input.body,
+    chatSessionToken: input.chatSessionToken,
+    admissionToken: input.admissionToken,
+    profileToken: input.profileToken,
+    ipAddress: "203.0.113.7",
+    now: input.now ?? NOW,
+  });
+}
+
+describe("LiveViewerProfile moderation, limits and retention on PostgreSQL", () => {
+  it("applies the vendor's keyword and identity blacklist to the nickname, also at display time", async () => {
+    clearLiveChatBlacklistCache();
+    const { vendor, form, live } = await vendorWithLive("moderation");
+    const scope = { vendorId: vendor.id, liveId: live.id };
+    const { submission, chatSessionToken } = await verifiedViewer(form, live, "王大明");
+    const admissionToken = await admit(vendor.id, live.id);
+    await db.blacklist.create({ data: { vendorId: vendor.id, identifier: "假貨", identifierType: "keyword", reason: "synthetic" } });
+    const moderate = (input: { vendorId: string; liveId: string }) => resolveViewerProfileModeration(db, {
+      ...input, admissionToken, chatSessionToken, ipAddress: "203.0.113.7", now: NOW,
+    });
+
+    await expect(saveLiveViewerProfile(db, { ...scope, admissionToken, profileToken: null, nickname: "賣假貨的人", avatarSeed: "host-blue", moderate, now: NOW }))
+      .rejects.toMatchObject({ code: "nickname_blocked" });
+    // The caller's own registration name is not reserved against them.
+    const { issuedProfileToken } = await saveLiveViewerProfile(db, { ...scope, admissionToken, profileToken: null, nickname: "王大明", avatarSeed: "host-blue", moderate, now: NOW });
+    await post(scope, { chatSessionToken, admissionToken, profileToken: issuedProfileToken, body: "hello" });
+
+    // A keyword rule added after the nickname was chosen hides it at display time.
+    await db.blacklist.create({ data: { vendorId: vendor.id, identifier: "大明", identifierType: "keyword", reason: "synthetic" } });
+    clearLiveChatBlacklistCache();
+    const keywordHidden = await listViewerChatMessages(db, { ...scope, chatSessionToken: null, admissionToken, now: NOW });
+    // The registration name is blocked too, so the default name shows.
+    expect(keywordHidden.messages.map((message) => message.actor)).toEqual([{ name: "觀眾" }]);
+
+    // A blacklisted email falls back to the registration name and blocks renaming.
+    await db.blacklist.deleteMany({ where: { vendorId: vendor.id, identifierType: "keyword", identifier: "大明" } });
+    await saveLiveViewerProfile(db, { ...scope, admissionToken, profileToken: issuedProfileToken, nickname: "阿明", avatarSeed: "host-blue", moderate, now: NOW });
+    await db.blacklist.create({ data: { vendorId: vendor.id, identifier: submission.email, identifierType: "email", reason: "synthetic" } });
+    clearLiveChatBlacklistCache();
+    const identityHidden = await listViewerChatMessages(db, { ...scope, chatSessionToken: null, admissionToken, now: NOW });
+    expect(identityHidden.messages.map((message) => message.actor)).toEqual([{ name: "王大明" }]);
+    await expect(saveLiveViewerProfile(db, { ...scope, admissionToken, profileToken: issuedProfileToken, nickname: "阿明二", avatarSeed: "host-blue", moderate, now: NOW }))
+      .rejects.toMatchObject({ code: "blocked" });
+    clearLiveChatBlacklistCache();
+  });
+
+  it("refuses a viewer whose admission visitor id is blacklisted, without a registration", async () => {
+    clearLiveChatBlacklistCache();
+    const { vendor, live } = await vendorWithLive("visitor-block");
+    const scope = { vendorId: vendor.id, liveId: live.id };
+    const admissionToken = await admit(vendor.id, live.id);
+    await db.blacklist.create({ data: { vendorId: vendor.id, identifier: hashLiveViewerToken(admissionToken), identifierType: "visitor_id", reason: "synthetic" } });
+    const moderate = (input: { vendorId: string; liveId: string }) => resolveViewerProfileModeration(db, {
+      ...input, admissionToken, chatSessionToken: null, ipAddress: null, now: NOW,
+    });
+    await expect(saveLiveViewerProfile(db, { ...scope, admissionToken, profileToken: null, nickname: "路人", avatarSeed: "host-blue", moderate, now: NOW }))
+      .rejects.toMatchObject({ code: "blocked" });
+    expect(await db.liveViewerProfile.count({ where: { liveId: live.id } })).toBe(0);
+  });
+
+  it("reserves names of recent chat authors without a nickname, for 7 days", async () => {
+    const { vendor, form, live } = await vendorWithLive("recent-authors");
+    const scope = { vendorId: vendor.id, liveId: live.id };
+    const author = await verifiedViewer(form, live, "Chen Wei");
+    const authorAdmission = await admit(vendor.id, live.id);
+    await post(scope, { chatSessionToken: author.chatSessionToken, admissionToken: authorAdmission, profileToken: null, body: "hi" });
+
+    await expect(save(scope, await admit(vendor.id, live.id), null, "chenwei")).rejects.toMatchObject({ code: "nickname_taken" });
+    // Eight days later that name no longer counts as present in the room.
+    await db.liveChatMessage.updateMany({ where: { liveId: live.id }, data: { createdAt: new Date(NOW.getTime() - 8 * 86_400_000) } });
+    await expect(save(scope, await admit(vendor.id, live.id), null, "chenwei")).resolves.toBeTruthy();
+  });
+
+  it("lets a new viewer take the name of a profile idle for 7 days, and hides the idle one", async () => {
+    const { vendor, form, live } = await vendorWithLive("release");
+    const scope = { vendorId: vendor.id, liveId: live.id };
+    const old = await verifiedViewer(form, live, "老觀眾");
+    const oldAdmission = await admit(vendor.id, live.id);
+    const { issuedProfileToken: oldToken } = await save(scope, oldAdmission, null, "小雨");
+    await post(scope, { chatSessionToken: old.chatSessionToken, admissionToken: oldAdmission, profileToken: oldToken, body: "我是小雨" });
+
+    // Still active: the name is held.
+    await expect(save(scope, await admit(vendor.id, live.id), null, "小雨")).rejects.toMatchObject({ code: "nickname_taken" });
+
+    await db.liveViewerProfile.updateMany({ where: { liveId: live.id }, data: { lastActiveAt: new Date(NOW.getTime() - 8 * 86_400_000) } });
+    await expect(save(scope, await admit(vendor.id, live.id), null, "小 雨")).resolves.toBeTruthy();
+    const rows = await db.liveViewerProfile.findMany({ where: { liveId: live.id }, orderBy: { createdAt: "asc" } });
+    expect(rows.map((row) => row.normalizedNickname).sort()).toEqual(["小雨", null].sort());
+
+    // The idle viewer's old message no longer shows the nickname, and its
+    // next visit is asked again with the old name suggested.
+    const listed = await listViewerChatMessages(db, { ...scope, chatSessionToken: null, admissionToken: await admit(vendor.id, live.id), now: NOW });
+    expect(listed.messages.map((message) => message.actor)).toEqual([{ name: "老觀眾" }]);
+    await expect(readLiveViewerProfile(db, { ...scope, admissionToken: await admit(vendor.id, live.id), profileToken: oldToken, now: NOW }))
+      .resolves.toEqual({ profile: null, previousNickname: "小雨" });
+    // Posting with the released profile uses the registration name.
+    const reposted = await post(scope, { chatSessionToken: old.chatSessionToken, admissionToken: oldAdmission, profileToken: oldToken, body: "我回來了" });
+    expect(reposted.message.actor).toEqual({ name: "老觀眾" });
+  });
+
+  it("lets one admission session create at most three profiles", async () => {
+    const { vendor, live } = await vendorWithLive("probe");
+    const scope = { vendorId: vendor.id, liveId: live.id };
+    const admissionToken = await admit(vendor.id, live.id);
+    for (const nickname of ["探一", "探二", "探三"]) await save(scope, admissionToken, null, nickname);
+    await expect(save(scope, admissionToken, null, "探四")).rejects.toMatchObject({ code: "too_many_profiles" });
+    expect(await db.liveViewerProfile.count({ where: { liveId: live.id } })).toBe(3);
+  });
+
+  it("deletes profiles 30 days after the live and its replay closed, keeping the messages", async () => {
+    const { vendor, form, live } = await vendorWithLive("retention");
+    const scope = { vendorId: vendor.id, liveId: live.id };
+    const viewer = await verifiedViewer(form, live, "回放觀眾");
+    const admissionToken = await admit(vendor.id, live.id);
+    const { issuedProfileToken } = await save(scope, admissionToken, null, "回放暱稱");
+    const posted = await post(scope, { chatSessionToken: viewer.chatSessionToken, admissionToken, profileToken: issuedProfileToken, body: "回放好看" });
+    const ongoing = await vendorWithLive("retention-ongoing");
+    await save({ vendorId: ongoing.vendor.id, liveId: ongoing.live.id }, await admit(ongoing.vendor.id, ongoing.live.id), null, "還在播");
+
+    const later = new Date(NOW.getTime() + 40 * 86_400_000);
+    await db.live.update({ where: { id: live.id }, data: { status: "ended", endedAt: new Date(NOW.getTime() + 86_400_000), replayEnabled: true, replayAvailableUntil: new Date(NOW.getTime() + 2 * 86_400_000) } });
+    await db.liveViewerProfile.updateMany({ where: { vendorId: { in: [vendor.id, ongoing.vendor.id] } }, data: { lastActiveAt: NOW } });
+
+    const result = await purgeExpiredData(db, { now: later, policy: dataRetentionPolicy({}) });
+    expect(result.liveViewerProfilesDeleted).toBeGreaterThanOrEqual(1);
+    expect(await db.liveViewerProfile.count({ where: { liveId: live.id } })).toBe(0);
+    // A live that has not ended keeps its profiles.
+    expect(await db.liveViewerProfile.count({ where: { liveId: ongoing.live.id } })).toBe(1);
+    const message = await db.liveChatMessage.findUniqueOrThrow({ where: { id: posted.message.id } });
+    expect(message).toMatchObject({ viewerProfileId: null, authorName: "回放觀眾" });
   });
 });

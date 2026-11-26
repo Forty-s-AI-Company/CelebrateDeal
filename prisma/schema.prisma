@@ -1137,17 +1137,22 @@ model LiveViewerSession {
 /// 觀眾在單一直播間的暱稱與頭像。以長效、不透明的 profile cookie 雜湊識別
 /// 同一位觀眾（admission 的 viewer session 只有 90 秒且離開即刪除，不能用來
 /// 「同一場再進來不再問」）。normalizedNickname 在同一場直播內唯一，併發
-/// 搶同一個名字由資料庫唯一鍵決定。
+/// 搶同一個名字由資料庫唯一鍵決定。觀眾 7 天沒有活動（lastActiveAt）後，
+/// 別人取同名時會把 normalizedNickname 清成 NULL（釋放名稱，不再佔用）。
 model LiveViewerProfile {
-  id                 String   @id @default(cuid())
-  vendorId           String
-  liveId             String
-  viewerKeyHash      String
-  nickname           String
-  normalizedNickname String
-  avatarSeed         String
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  vendorId             String
+  liveId               String
+  viewerKeyHash        String
+  nickname             String
+  /// NULL：名稱已釋放，這個 profile 不再顯示也不佔用名稱。
+  normalizedNickname   String?
+  avatarSeed           String
+  /// 建立它的 admission session 的 tokenHash；每個 session 最多建 3 個 profile。
+  createdBySessionHash String
+  lastActiveAt         DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   vendor       Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   live         Live              @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
@@ -1156,6 +1161,8 @@ model LiveViewerProfile {
   @@unique([vendorId, liveId, id])
   @@unique([vendorId, liveId, viewerKeyHash])
   @@unique([vendorId, liveId, normalizedNickname])
+  @@index([vendorId, liveId, createdBySessionHash])
+  @@index([lastActiveAt])
 }
 
 model LiveProduct {

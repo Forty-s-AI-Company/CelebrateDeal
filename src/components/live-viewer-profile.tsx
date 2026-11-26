@@ -60,6 +60,41 @@ export function liveViewerProfileRequiredForChat(input: { enabled: boolean; stat
   return input.enabled && input.status !== "error";
 }
 
+/** A slow profile read must not hold the room: after this it counts as failed (fail open). */
+export const LIVE_VIEWER_PROFILE_READ_TIMEOUT_MS = 6_000;
+
+export type LiveViewerProfileReadResult =
+  | { status: "ready"; profile: LiveViewerProfile | null; suggestedNickname: string | null }
+  | { status: "error" };
+
+/**
+ * Reads the viewer's profile. Any failure, an abort or the timeout returns
+ * `error`, which the gate treats as "do not block watching".
+ */
+export async function fetchLiveViewerProfile(input: {
+  vendorId: string;
+  liveId: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<LiveViewerProfileReadResult> {
+  const query = new URLSearchParams({ vendorId: input.vendorId, liveId: input.liveId });
+  const timeout = AbortSignal.timeout(input.timeoutMs ?? LIVE_VIEWER_PROFILE_READ_TIMEOUT_MS);
+  const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
+  try {
+    const response = await (input.fetchImpl ?? fetch)(`${LIVE_VIEWER_PROFILE_ENDPOINT}?${query.toString()}`, { headers: CLIENT_HEADERS, signal });
+    if (!response.ok) return { status: "error" };
+    const payload: unknown = await response.json();
+    return {
+      status: "ready",
+      profile: isObject(payload) ? parseLiveViewerProfile(payload.profile) : null,
+      suggestedNickname: isObject(payload) && typeof payload.suggestedNickname === "string" ? payload.suggestedNickname : null,
+    };
+  } catch {
+    return { status: "error" };
+  }
+}
+
 type ProfileState = {
   scope: string;
   status: LiveViewerProfileStatus;
@@ -79,23 +114,15 @@ export function useLiveViewerProfile({ vendorId, liveId, enabled }: { vendorId: 
     queueMicrotask(() => {
       if (!disposed) setState((previous) => previous.scope === scope && previous.status === "ready" ? previous : { scope, status: "loading", profile: null, suggestedNickname: null });
     });
-    const query = new URLSearchParams({ vendorId, liveId });
-    void fetch(`${LIVE_VIEWER_PROFILE_ENDPOINT}?${query.toString()}`, { headers: CLIENT_HEADERS, signal: controller.signal })
-      .then(async (response) => {
-        if (disposed) return;
-        if (!response.ok) {
-          setState((previous) => previous.scope === scope && previous.status === "ready" ? previous : { scope, status: "error", profile: null, suggestedNickname: null });
-          return;
-        }
-        const payload: unknown = await response.json();
-        if (disposed) return;
-        const profile = isObject(payload) ? parseLiveViewerProfile(payload.profile) : null;
-        const suggestion = isObject(payload) && typeof payload.suggestedNickname === "string" ? payload.suggestedNickname : null;
-        setState({ scope, status: "ready", profile, suggestedNickname: suggestion });
-      })
-      .catch(() => {
-        if (!disposed) setState((previous) => previous.scope === scope && previous.status === "ready" ? previous : { scope, status: "error", profile: null, suggestedNickname: null });
-      });
+    void fetchLiveViewerProfile({ vendorId, liveId, signal: controller.signal }).then((result) => {
+      if (disposed) return;
+      if (result.status === "error") {
+        // Keep a profile already read; otherwise fail open (watching is never blocked).
+        setState((previous) => previous.scope === scope && previous.status === "ready" ? previous : { scope, status: "error", profile: null, suggestedNickname: null });
+        return;
+      }
+      setState({ scope, status: "ready", profile: result.profile, suggestedNickname: result.suggestedNickname });
+    });
     return () => {
       disposed = true;
       controller.abort();

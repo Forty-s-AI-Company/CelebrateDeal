@@ -4,7 +4,10 @@ import { hashLiveViewerToken } from "@/lib/live-quota-admission";
 import {
   hashLiveViewerProfileKey,
   LIVE_VIEWER_AVATAR_SEEDS,
+  LIVE_VIEWER_NICKNAME_BLOCKED_MESSAGE,
+  LIVE_VIEWER_NICKNAME_HOLD_MS,
   LIVE_VIEWER_NICKNAME_TAKEN_MESSAGE,
+  LIVE_VIEWER_PROFILES_PER_ADMISSION,
   LIVE_VIEWER_PROFILE_COOKIE,
   liveViewerAvatarUrl,
   liveViewerNicknameKey,
@@ -44,10 +47,20 @@ describe("normalizeLiveViewerNickname", () => {
     expect(normalizeLiveViewerNickname(42)).toEqual({ ok: false, problem: "empty" });
   });
 
-  it("rejects control, zero-width and bidi characters", () => {
-    for (const value of ["a\u0000b", "a\nb", "a\tb", "a​b", "a‮b", "a b", "﻿name"]) {
+  it("rejects control, zero-width, bidi and stacked combining characters", () => {
+    for (const value of ["a\u0000b", "a\nb", "a\tb", "a​b", "a‮b", "a b", "﻿name", "q̣̇́"]) {
       expect(normalizeLiveViewerNickname(value)).toEqual({ ok: false, problem: "invalid_characters" });
     }
+  });
+
+  it("keeps emoji sequences joined by ZWJ/ZWNJ and up to two combining marks", () => {
+    const family = "\u{1F468}‍\u{1F469}‍\u{1F467}";
+    expect(normalizeLiveViewerNickname(`${family}家`)).toMatchObject({ ok: true, nickname: `${family}家` });
+    expect(normalizeLiveViewerNickname("a‌b")).toMatchObject({ ok: true });
+    // A combining sequence NFKC cannot compose stays allowed up to two marks.
+    expect(normalizeLiveViewerNickname("q̣̇")).toMatchObject({ ok: true });
+    // Joiners are invisible to the comparison key, so they cannot fake a new name.
+    expect(liveViewerNicknameKey("小‍明")).toBe(liveViewerNicknameKey("小明"));
   });
 
   it("rejects links but keeps initials", () => {
@@ -110,7 +123,7 @@ describe("profile cookie", () => {
   });
 
   it("is HttpOnly, Lax and secure on https", () => {
-    expect(liveViewerProfileCookieOptions(new Request("https://app.example.test/x"))).toMatchObject({ httpOnly: true, sameSite: "lax", secure: true, path: "/" });
+    expect(liveViewerProfileCookieOptions(new Request("https://app.example.test/x"))).toMatchObject({ httpOnly: true, sameSite: "lax", secure: true, path: "/api" });
     expect(liveViewerProfileCookieOptions(new Request("http://127.0.0.1:3000/x")).secure).toBe(false);
   });
 
@@ -120,11 +133,15 @@ describe("profile cookie", () => {
   });
 });
 
+const ACTIVE_ROW = { id: "profile-1", nickname: "小明", avatarSeed: "host-blue", normalizedNickname: "小明", lastActiveAt: NOW };
+
 function fakeDatabase(options: {
   session?: { vendorId: string; liveId: string; expiresAt: Date } | null;
   live?: unknown;
   upsert?: () => Promise<unknown>;
   profile?: unknown;
+  createdBySession?: number;
+  authors?: Array<{ authorName: string }>;
 } = {}) {
   return {
     liveViewerSession: {
@@ -137,12 +154,19 @@ function fakeDatabase(options: {
         ? { vendor: { name: "幸福烘焙" }, interactionScript: { vendorId: "vendor-1", events: [{ role: { name: "小助理 Amy" } }, { role: null }] } }
         : options.live),
     },
+    liveChatMessage: {
+      findMany: vi.fn(async () => options.authors ?? []),
+    },
     liveViewerProfile: {
       findUnique: vi.fn(async () => options.profile ?? null),
-      upsert: vi.fn(options.upsert ?? (async () => ({ id: "profile-1", nickname: "小明", avatarSeed: "host-blue" }))),
+      count: vi.fn(async () => options.createdBySession ?? 0),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+      upsert: vi.fn(options.upsert ?? (async () => ACTIVE_ROW)),
     },
   };
 }
+
+const allowAll = async () => ({ identityBlocked: false, isNicknameBlocked: () => false, ownSubmissionId: null });
 
 const saveInput = {
   vendorId: "vendor-1",
@@ -165,6 +189,7 @@ describe("saveLiveViewerProfile", () => {
     expect(upsert[0].create).toMatchObject({ vendorId: "vendor-1", liveId: "live-1", nickname: "小明", normalizedNickname: "小明", avatarSeed: "host-blue" });
     expect(result.issuedProfileToken).toMatch(/^[A-Za-z0-9_-]{43}$/u);
     expect(upsert[0].create.viewerKeyHash).toBe(hashLiveViewerProfileKey(result.issuedProfileToken!, "live-1"));
+    expect(upsert[0].create).toMatchObject({ createdBySessionHash: hashLiveViewerToken(ADMISSION), lastActiveAt: NOW });
     expect(result.profile).toEqual({ nickname: "小明", avatarSeed: "host-blue", avatarUrl: interactionRoleAvatarUrl("host-blue") });
 
     const again = await saveLiveViewerProfile(database as never, { ...saveInput, profileToken: PROFILE });
@@ -221,7 +246,7 @@ describe("saveLiveViewerProfile", () => {
       upsert: async () => {
         calls += 1;
         if (calls === 1) throw raced;
-        return { id: "profile-1", nickname: "小明", avatarSeed: "host-blue" };
+        return ACTIVE_ROW;
       },
     });
     await expect(saveLiveViewerProfile(database as never, saveInput)).resolves.toMatchObject({ profile: { nickname: "小明" } });
@@ -235,15 +260,106 @@ describe("saveLiveViewerProfile", () => {
 });
 
 describe("readLiveViewerProfile", () => {
-  it("returns this cookie's profile in this live only", async () => {
-    const database = fakeDatabase({ profile: { id: "profile-1", nickname: "小明", avatarSeed: "care-teal" } });
+  it("returns this cookie's profile in this live only and refreshes its activity", async () => {
+    const idle = new Date(NOW.getTime() - 2 * 60 * 60 * 1_000);
+    const database = fakeDatabase({ profile: { id: "profile-1", nickname: "小明", avatarSeed: "care-teal", normalizedNickname: "小明", lastActiveAt: idle } });
     await expect(readLiveViewerProfile(database as never, { ...saveInput, profileToken: PROFILE }))
-      .resolves.toEqual({ nickname: "小明", avatarSeed: "care-teal", avatarUrl: interactionRoleAvatarUrl("care-teal") });
+      .resolves.toEqual({ profile: { nickname: "小明", avatarSeed: "care-teal", avatarUrl: interactionRoleAvatarUrl("care-teal") }, previousNickname: null });
     expect(database.liveViewerProfile.findUnique).toHaveBeenCalledWith(expect.objectContaining({
       where: { vendorId_liveId_viewerKeyHash: { vendorId: "vendor-1", liveId: "live-1", viewerKeyHash: hashLiveViewerProfileKey(PROFILE, "live-1") } },
     }));
+    expect(database.liveViewerProfile.updateMany).toHaveBeenCalledWith({
+      where: { id: "profile-1", lastActiveAt: { lt: new Date(NOW.getTime() - 60 * 60 * 1_000) } },
+      data: { lastActiveAt: NOW },
+    });
     const noCookie = fakeDatabase();
-    await expect(readLiveViewerProfile(noCookie as never, saveInput)).resolves.toBeNull();
+    await expect(readLiveViewerProfile(noCookie as never, saveInput)).resolves.toEqual({ profile: null, previousNickname: null });
     expect(noCookie.liveViewerProfile.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh a profile seen within the hour", async () => {
+    const database = fakeDatabase({ profile: { ...ACTIVE_ROW, lastActiveAt: new Date(NOW.getTime() - 60_000) } });
+    await readLiveViewerProfile(database as never, { ...saveInput, profileToken: PROFILE });
+    expect(database.liveViewerProfile.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("treats a released profile as none and offers its old name again", async () => {
+    const database = fakeDatabase({ profile: { ...ACTIVE_ROW, normalizedNickname: null } });
+    await expect(readLiveViewerProfile(database as never, { ...saveInput, profileToken: PROFILE }))
+      .resolves.toEqual({ profile: null, previousNickname: "小明" });
+  });
+});
+
+describe("saveLiveViewerProfile moderation and limits", () => {
+  it("refuses a nickname the vendor's keyword rules block", async () => {
+    const database = fakeDatabase();
+    await expect(saveLiveViewerProfile(database as never, {
+      ...saveInput,
+      nickname: "賣假貨",
+      moderate: async () => ({ identityBlocked: false, isNicknameBlocked: (name: string) => name.includes("假貨"), ownSubmissionId: null }),
+    })).rejects.toMatchObject({ code: "nickname_blocked" });
+    expect(database.liveViewerProfile.upsert).not.toHaveBeenCalled();
+    expect(LIVE_VIEWER_NICKNAME_BLOCKED_MESSAGE).toBe("這個名稱無法使用，請換一個");
+    expect(liveViewerProfileErrorMessage(new LiveViewerProfileError("nickname_blocked"))).toBe("這個名稱無法使用，請換一個");
+  });
+
+  it("refuses a blacklisted viewer and asks moderation with the session's scope", async () => {
+    const database = fakeDatabase();
+    const moderate = vi.fn(async () => ({ identityBlocked: true, isNicknameBlocked: () => false, ownSubmissionId: null }));
+    await expect(saveLiveViewerProfile(database as never, { ...saveInput, moderate })).rejects.toMatchObject({ code: "blocked" });
+    expect(moderate).toHaveBeenCalledWith({ vendorId: "vendor-1", liveId: "live-1" });
+    expect(database.liveViewerProfile.upsert).not.toHaveBeenCalled();
+  });
+
+  it("reserves recent chat authors without a nickname, except the caller's own registration", async () => {
+    const database = fakeDatabase({ authors: [{ authorName: "王 大明" }] });
+    await expect(saveLiveViewerProfile(database as never, { ...saveInput, nickname: "王大明", moderate: allowAll }))
+      .rejects.toMatchObject({ code: "nickname_taken" });
+    const query = database.liveChatMessage.findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown> }];
+    expect(query[0].where).toMatchObject({
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      source: "viewer",
+      viewerProfileId: null,
+      createdAt: { gte: new Date(NOW.getTime() - LIVE_VIEWER_NICKNAME_HOLD_MS) },
+    });
+    expect(query[0].where).not.toHaveProperty("NOT");
+
+    const own = fakeDatabase();
+    await saveLiveViewerProfile(own as never, {
+      ...saveInput,
+      moderate: async () => ({ identityBlocked: false, isNicknameBlocked: () => false, ownSubmissionId: "submission-1" }),
+    });
+    const ownQuery = own.liveChatMessage.findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown> }];
+    expect(ownQuery[0].where).toMatchObject({ NOT: { formSubmissionId: "submission-1" } });
+  });
+
+  it("allows at most three new profiles per admission session", async () => {
+    const full = fakeDatabase({ createdBySession: LIVE_VIEWER_PROFILES_PER_ADMISSION });
+    await expect(saveLiveViewerProfile(full as never, saveInput)).rejects.toMatchObject({ code: "too_many_profiles" });
+    expect(full.liveViewerProfile.count).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", liveId: "live-1", createdBySessionHash: hashLiveViewerToken(ADMISSION) },
+    });
+    expect(full.liveViewerProfile.upsert).not.toHaveBeenCalled();
+    expect(liveViewerProfileErrorMessage(new LiveViewerProfileError("too_many_profiles"))).toContain("稍後");
+
+    // Renaming an existing profile is not a new profile.
+    const renaming = fakeDatabase({ createdBySession: LIVE_VIEWER_PROFILES_PER_ADMISSION, profile: { id: "profile-1" } });
+    await expect(saveLiveViewerProfile(renaming as never, { ...saveInput, profileToken: PROFILE })).resolves.toMatchObject({ issuedProfileToken: null });
+  });
+
+  it("releases only an idle holder of the same name, never the caller's own row", async () => {
+    const database = fakeDatabase();
+    await saveLiveViewerProfile(database as never, { ...saveInput, profileToken: PROFILE });
+    expect(database.liveViewerProfile.updateMany).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        liveId: "live-1",
+        normalizedNickname: "小明",
+        lastActiveAt: { lt: new Date(NOW.getTime() - LIVE_VIEWER_NICKNAME_HOLD_MS) },
+        NOT: { viewerKeyHash: hashLiveViewerProfileKey(PROFILE, "live-1") },
+      },
+      data: { normalizedNickname: null },
+    });
   });
 });

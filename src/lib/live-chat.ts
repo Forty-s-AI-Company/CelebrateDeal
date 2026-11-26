@@ -6,7 +6,7 @@ import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionTok
 import type { ViewerRuntimeMessage as ContractViewerRuntimeMessage } from "@/lib/live-chat-contract";
 import { hashLiveViewerToken, hasActiveLiveViewerSession } from "@/lib/live-quota-admission";
 import { verifyLiveViewerPass } from "@/lib/live-viewer-pass";
-import { findLiveViewerProfile, liveViewerAvatarUrl } from "@/lib/live-viewer-profile";
+import { findActiveLiveViewerProfile, liveViewerAvatarUrl, touchLiveViewerProfile, type LiveViewerProfileModeration } from "@/lib/live-viewer-profile";
 import { normalizeClientIp } from "@/lib/request-client-ip";
 import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
@@ -86,7 +86,9 @@ type StoredViewerMessage = {
   createdAt: Date;
   viewerProfileId?: string | null;
   /** The viewer's current nickname profile in this live, when it posted with one. */
-  viewerProfile?: { nickname: string; avatarSeed: string } | null;
+  viewerProfile?: { nickname: string; avatarSeed: string; normalizedNickname: string | null } | null;
+  /** The author's contact, read only to apply the vendor blacklist to the nickname. */
+  formSubmission?: { email: string; phone: string | null } | null;
 };
 
 type LiveChatModels = Pick<
@@ -276,11 +278,45 @@ function messageSelect() {
     isSimulated: true,
     createdAt: true,
     viewerProfileId: true,
-    viewerProfile: { select: { nickname: true, avatarSeed: true } },
+    viewerProfile: { select: { nickname: true, avatarSeed: true, normalizedNickname: true } },
+    formSubmission: { select: { email: true, phone: true } },
   } as const;
 }
 
-function toViewerRuntimeMessage(message: StoredViewerMessage): ViewerRuntimeMessage | null {
+function isContactBlocked(rows: BlacklistRows, contact: { email: string; phone: string | null } | null | undefined) {
+  if (!contact) return false;
+  const current = {
+    email: normalizeBlacklistIdentifier("email", contact.email),
+    phone: contact.phone ? normalizeBlacklistIdentifier("phone", contact.phone) : null,
+  };
+  return rows.some((row) => {
+    if (row.identifierType !== "email" && row.identifierType !== "phone") return false;
+    const stored = normalizeBlacklistIdentifier(row.identifierType, row.identifier);
+    return stored !== null && stored === current[row.identifierType];
+  });
+}
+
+/**
+ * Name and avatar shown for a viewer message. The nickname is used only while
+ * its profile still holds the name, the nickname passes the vendor's keyword
+ * rules and the author's email/phone is not blacklisted; otherwise the
+ * registration name shows without an avatar ("觀眾" when that name is itself
+ * blocked).
+ */
+function viewerDisplayActor(message: StoredViewerMessage, rows: BlacklistRows) {
+  const profile = message.viewerProfileId ? message.viewerProfile ?? null : null;
+  if (!profile) return { name: normalizeDisplayName(message.authorName) };
+  const usable = profile.normalizedNickname !== null
+    && !isKeywordBlocked(rows, profile.nickname)
+    && !isContactBlocked(rows, message.formSubmission);
+  if (!usable) {
+    return { name: isKeywordBlocked(rows, message.authorName) ? "觀眾" : normalizeDisplayName(message.authorName) };
+  }
+  const avatarUrl = liveViewerAvatarUrl(profile.avatarSeed);
+  return { name: normalizeDisplayName(profile.nickname), ...(avatarUrl ? { avatarUrl } : {}) };
+}
+
+function toViewerRuntimeMessage(message: StoredViewerMessage, rows: BlacklistRows): ViewerRuntimeMessage | null {
   if (
     !message.id
     || message.id.length > 128
@@ -300,17 +336,12 @@ function toViewerRuntimeMessage(message: StoredViewerMessage): ViewerRuntimeMess
 
   // The nickname profile replaces the registration name for display only;
   // authorName stays the registration snapshot for merchant views.
-  const profile = message.viewerProfileId ? message.viewerProfile ?? null : null;
-  const avatarUrl = profile ? liveViewerAvatarUrl(profile.avatarSeed) : null;
   return {
     id: message.id,
     source: "viewer",
     createdAt: createdAt.toISOString(),
     body,
-    actor: {
-      name: normalizeDisplayName(profile?.nickname ?? message.authorName),
-      ...(avatarUrl ? { avatarUrl } : {}),
-    },
+    actor: viewerDisplayActor(message, rows),
   };
 }
 
@@ -417,6 +448,31 @@ export async function resolveViewerRegistrationName(
 ) {
   const context = await resolveVerifiedViewerContext(database, input, admission);
   return context ? context.submission.name : null;
+}
+
+/**
+ * The vendor's chat moderation applied to a nickname change: the same
+ * identity rules a post uses (verified registration email/phone when present,
+ * the request IP, the admission visitor id) and the same keyword rules as a
+ * message body. Reads the database, never the read-poll cache.
+ */
+export async function resolveViewerProfileModeration(
+  database: LiveChatModels,
+  input: { vendorId: string; liveId: string; admissionToken: string; chatSessionToken: string | null; ipAddress: string | null; now?: Date },
+): Promise<LiveViewerProfileModeration> {
+  const context = await resolveVerifiedViewerContext(database, input, { admissionToken: input.admissionToken });
+  const rows = await activeBlacklists(database, input.vendorId);
+  const identityBlocked = isIdentityBlocked(rows, {
+    email: context?.submission.email ?? "",
+    phone: context?.submission.phone ?? null,
+    ip: normalizeClientIp(input.ipAddress),
+    visitorId: hashLiveViewerToken(input.admissionToken),
+  });
+  return {
+    identityBlocked,
+    isNicknameBlocked: (nickname) => isKeywordBlocked(rows, nickname),
+    ownSubmissionId: context?.submission.id ?? null,
+  };
 }
 
 type BlacklistRows = Array<{ identifier: string; identifierType: string }>;
@@ -552,9 +608,8 @@ export async function listViewerChatMessages(
 ): Promise<ViewerChatListResult> {
   const admission = await resolveViewerAdmissionContext(database, input, input.viewerPass ?? null);
   const context = await resolveVerifiedViewerContext(database, input, admission);
-  const blacklistRows = context
-    ? await cachedActiveBlacklists(database, input.vendorId, (input.now ?? new Date()).getTime())
-    : [];
+  // Always read (cached): keyword rules also decide which nicknames show.
+  const blacklistRows = await cachedActiveBlacklists(database, input.vendorId, (input.now ?? new Date()).getTime());
   const blocked = context
     ? isIdentityBlocked(blacklistRows, {
         email: context.submission.email,
@@ -587,7 +642,7 @@ export async function listViewerChatMessages(
 
   const hasMore = rows.length > LIVE_CHAT_PAGE_SIZE;
   const pageRows = rows.slice(0, LIVE_CHAT_PAGE_SIZE);
-  const messages = pageRows.map(toViewerRuntimeMessage).filter((message): message is ViewerRuntimeMessage => message !== null).reverse();
+  const messages = pageRows.map((row) => toViewerRuntimeMessage(row, blacklistRows)).filter((message): message is ViewerRuntimeMessage => message !== null).reverse();
   const oldest = pageRows[pageRows.length - 1];
 
   return {
@@ -635,9 +690,8 @@ export async function listViewerChatUpdates(
   if (input.since && !since) throw new LiveChatError("invalid_cursor");
 
   const context = await resolveVerifiedViewerContext(database, input, input.admission);
-  const blacklistRows = context
-    ? await cachedActiveBlacklists(database, input.vendorId, (input.now ?? new Date()).getTime())
-    : [];
+  // Always read (cached): keyword rules also decide which nicknames show.
+  const blacklistRows = await cachedActiveBlacklists(database, input.vendorId, (input.now ?? new Date()).getTime());
   const blocked = context
     ? isIdentityBlocked(blacklistRows, {
         email: context.submission.email,
@@ -678,7 +732,7 @@ export async function listViewerChatUpdates(
   const pageRows = reset ? rows.slice(0, LIVE_CHAT_PAGE_SIZE) : rows;
   const newest = newRows[0];
   const messages = pageRows
-    .map(toViewerRuntimeMessage)
+    .map((row) => toViewerRuntimeMessage(row, blacklistRows))
     .filter((message): message is ViewerRuntimeMessage => message !== null)
     .reverse();
 
@@ -738,7 +792,9 @@ export async function createViewerChatMessage(
     if (!sameIdempotentMessage(raced, attempted)) {
       throw new LiveChatError("idempotency_conflict");
     }
-    const message = toViewerRuntimeMessage(raced);
+    // A replay answers only its own author and reads no moderation rules
+    // (see below); the next poll shows everyone the moderated name.
+    const message = toViewerRuntimeMessage(raced, []);
     if (!message) throw new LiveChatError("idempotency_conflict");
     return { message, created: false };
   };
@@ -771,7 +827,10 @@ export async function createViewerChatMessage(
     const existing = await findExistingMessage(tx, id);
     if (existing) {
       if (!sameIdempotentMessage(existing, idempotency)) throw new LiveChatError("idempotency_conflict");
-      const message = toViewerRuntimeMessage(existing);
+      // A replay answers only its own author; it reads no moderation rules so
+      // it succeeds whatever was added since, and the next poll shows
+      // everyone the moderated name.
+      const message = toViewerRuntimeMessage(existing, []);
       if (!message) throw new LiveChatError("idempotency_conflict");
       return { message, created: false };
     }
@@ -780,11 +839,13 @@ export async function createViewerChatMessage(
     if (isKeywordBlocked(rows, body)) throw new LiveChatError("keyword_blocked");
     // Same vendor/live as the admission just verified; the composite foreign
     // key also refuses a profile of another live.
-    const profile = await findLiveViewerProfile(
+    // A released profile (idle 7 days, name taken over) is not used.
+    const profile = await findActiveLiveViewerProfile(
       tx,
       { vendorId: input.vendorId, liveId: input.liveId },
       input.profileToken ?? null,
     );
+    if (profile) await touchLiveViewerProfile(tx, profile, input.now ?? new Date());
 
     const created = await tx.liveChatMessage.create({
       data: {
@@ -802,7 +863,7 @@ export async function createViewerChatMessage(
       },
       select: messageSelect(),
     }) as unknown as StoredViewerMessage;
-    const message = toViewerRuntimeMessage(created);
+    const message = toViewerRuntimeMessage(created, rows);
     if (!message) throw new Error("Created viewer chat message was not safe to project.");
     return { message, created: true };
   }, { isolationLevel: "Serializable" });

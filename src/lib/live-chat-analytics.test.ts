@@ -43,6 +43,22 @@ describe("live chat analytics isolation", () => {
     ]);
   });
 
+  it("adds the viewer's nickname next to the registration name, and neutralizes formulas in it", () => {
+    const rows = buildLiveChatExportRows({
+      liveId: "live-1",
+      scheduledAt: new Date("2026-08-17T10:00:00.000Z"),
+      viewerMessages: [
+        { id: "viewer-1", liveId: "live-1", authorName: "王大明", body: "嗨", createdAt: new Date("2026-08-17T10:00:05.000Z"), viewerProfile: { nickname: "=阿明" } },
+        { id: "viewer-2", liveId: "live-1", authorName: "李小華", body: "安", createdAt: new Date("2026-08-17T10:00:06.000Z"), viewerProfile: null },
+      ],
+      scheduledMessages: [{ id: "scheduled-1", triggerSec: 10, message: "排程留言", role: { name: "官方小編" } }],
+    });
+    expect(rows.map((row) => [row.actorName, row.nickname])).toEqual([["王大明", "=阿明"], ["李小華", ""], ["官方小編", ""]]);
+    const csv = liveChatRowsToCsv(rows);
+    expect(csv.split("\n")[0]).toBe('"messageId","liveId","actorName","nickname","body","source","isSimulated","occurredAt"');
+    expect(csv).toContain("\"'=阿明\"");
+  });
+
   it("leaves an unprovable scheduled occurrence blank and neutralizes spreadsheet formulas", () => {
     const rows = buildLiveChatExportRows({
       liveId: "live-1",

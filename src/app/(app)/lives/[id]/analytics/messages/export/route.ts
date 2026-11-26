@@ -27,7 +27,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     db.liveChatMessage.findMany({
       where: realViewerMessageWhere({ vendorId: vendor.id, liveId: live.id }),
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { id: true, liveId: true, authorName: true, body: true, createdAt: true },
+      select: { id: true, liveId: true, authorName: true, body: true, createdAt: true, viewerProfile: { select: { nickname: true } } },
     }),
     validScriptId
       ? db.interactionEvent.findMany({

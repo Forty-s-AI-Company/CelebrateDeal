@@ -1,29 +1,30 @@
 import { NextResponse } from "next/server";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
-import { chatSessionTokenFromRequest, resolveViewerRegistrationName } from "@/lib/live-chat";
+import { chatSessionTokenFromRequest, resolveViewerProfileModeration, resolveViewerRegistrationName } from "@/lib/live-chat";
+import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { liveViewerPassRateLimitIdentity } from "@/lib/live-viewer-pass";
 import {
-  findLiveViewerProfile,
   LIVE_VIEWER_PROFILE_COOKIE,
-  liveViewerAvatarUrl,
   liveViewerProfileCookieOptions,
   LiveViewerProfileError,
   liveViewerProfileErrorMessage,
   LiveViewerProfileSaveSchema,
   LiveViewerProfileScopeSchema,
   liveViewerProfileTokenFromRequest,
-  resolveLiveViewerProfileScope,
+  readLiveViewerProfile,
   saveLiveViewerProfile,
   suggestLiveViewerNickname,
 } from "@/lib/live-viewer-profile";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { getRequestClientIp } from "@/lib/request-client-ip";
 
 /**
  * The viewer's nickname and avatar in one live room. Both methods need the
  * same-origin client header and an active admission session for exactly this
  * vendor/live (the session row is the source of the ids used in every query).
+ * The nickname is a display name, not a security control.
  */
 
 const MAX_QUERY_LENGTH = 1_024;
@@ -33,6 +34,16 @@ const READ_IP_LIMIT = 600;
 const WRITE_IP_LIMIT = 300;
 /** Per viewer (verified pass) each minute. */
 const WRITE_VIEWER_LIMIT = 10;
+
+const ERROR_STATUS: Record<LiveViewerProfileError["code"], number> = {
+  access_denied: 403,
+  blocked: 403,
+  invalid_nickname: 400,
+  nickname_blocked: 400,
+  invalid_avatar: 400,
+  nickname_taken: 409,
+  too_many_profiles: 429,
+};
 
 function noStore<T extends Response>(response: T) {
   response.headers.set("Cache-Control", "private, no-store");
@@ -47,10 +58,7 @@ function errorResponse(error: unknown) {
   if (!(error instanceof LiveViewerProfileError)) {
     return json({ error: "Unable to save the nickname" }, 500);
   }
-  const message = liveViewerProfileErrorMessage(error);
-  if (error.code === "access_denied") return json({ error: error.code, message }, 403);
-  if (error.code === "nickname_taken") return json({ error: error.code, message }, 409);
-  return json({ error: error.code, message }, 400);
+  return json({ error: error.code, message: liveViewerProfileErrorMessage(error) }, ERROR_STATUS[error.code]);
 }
 
 function parseScope(request: Request) {
@@ -83,15 +91,13 @@ export async function GET(request: Request) {
     const db = getDb();
     const admissionToken = liveViewerTokenFromRequest(request);
     if (!admissionToken) throw new LiveViewerProfileError("access_denied");
-    const scope = await resolveLiveViewerProfileScope(db, { ...query, admissionToken });
-    const row = await findLiveViewerProfile(db, scope, liveViewerProfileTokenFromRequest(request));
-    const avatarUrl = row ? liveViewerAvatarUrl(row.avatarSeed) : null;
-    const profile = row && avatarUrl ? { nickname: row.nickname, avatarSeed: row.avatarSeed, avatarUrl } : null;
-    // Only the caller's own verified registration name; never another viewer.
-    const registrationName = profile
+    const result = await readLiveViewerProfile(db, { ...query, admissionToken, profileToken: liveViewerProfileTokenFromRequest(request) });
+    // A released nickname is offered again; otherwise the caller's own
+    // verified registration name. Never another viewer's.
+    const registrationName = result.profile || result.previousNickname
       ? null
-      : await resolveViewerRegistrationName(db, { ...scope, chatSessionToken: chatSessionTokenFromRequest(request) }, { admissionToken });
-    return json({ profile, suggestedNickname: suggestLiveViewerNickname(registrationName) });
+      : await resolveViewerRegistrationName(db, { ...query, chatSessionToken: chatSessionTokenFromRequest(request) }, { admissionToken });
+    return json({ profile: result.profile, suggestedNickname: suggestLiveViewerNickname(result.previousNickname ?? registrationName) });
   } catch (error) {
     return errorResponse(error);
   }
@@ -120,10 +126,20 @@ export async function PUT(request: Request) {
   if (viewerLimited) return noStore(viewerLimited);
 
   try {
-    const result = await saveLiveViewerProfile(getDb(), {
+    const db = getDb();
+    const chatSessionToken = chatSessionTokenFromRequest(request);
+    const ipAddress = getRequestClientIp(request, liveChatIpTrustConfig());
+    const result = await saveLiveViewerProfile(db, {
       ...parsed.data,
       admissionToken,
       profileToken: liveViewerProfileTokenFromRequest(request),
+      // The vendor's blacklist, with the scope taken from the admission row.
+      moderate: (scope) => resolveViewerProfileModeration(db, {
+        ...scope,
+        admissionToken: admissionToken ?? "",
+        chatSessionToken,
+        ipAddress,
+      }),
     });
     const response = json({ profile: result.profile });
     if (result.issuedProfileToken) {

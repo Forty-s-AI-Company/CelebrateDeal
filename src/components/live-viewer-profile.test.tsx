@@ -7,7 +7,9 @@ import { parseViewerRuntimeMessage } from "@/lib/live-updates-client";
 import { isNicknameMissing, LiveChatPanel } from "./live-chat-panel";
 import {
   ChatAvatar,
+  fetchLiveViewerProfile,
   LIVE_VIEWER_AVATAR_OPTIONS,
+  LIVE_VIEWER_PROFILE_READ_TIMEOUT_MS,
   liveViewerProfileGateRequired,
   liveViewerProfileRequiredForChat,
   LiveViewerProfileDialog,
@@ -85,6 +87,45 @@ describe("nickname gate", () => {
     expect(liveViewerProfileRequiredForChat({ enabled: true, status: "ready" })).toBe(true);
     expect(liveViewerProfileRequiredForChat({ enabled: true, status: "error" })).toBe(false);
     expect(liveViewerProfileRequiredForChat({ enabled: false, status: "ready" })).toBe(false);
+  });
+});
+
+describe("profile read", () => {
+  /** A fetch that only ends when its signal aborts, like a hung request. */
+  const hangingFetch = ((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(init.signal?.reason ?? new Error("aborted")));
+  })) as unknown as typeof fetch;
+
+  it("gives up after the timeout and reports an error, which never blocks watching", async () => {
+    const started = Date.now();
+    const result = await fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", timeoutMs: 30, fetchImpl: hangingFetch });
+    expect(result).toEqual({ status: "error" });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(liveViewerProfileGateRequired({ enabled: true, runtimeState: "playing", status: result.status, hasProfile: false })).toBe(false);
+    expect(LIVE_VIEWER_PROFILE_READ_TIMEOUT_MS).toBe(6_000);
+  });
+
+  it("parses a profile and suggestion, and treats a failed response as an error", async () => {
+    const url = interactionRoleAvatarUrl("host-blue");
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    const okFetch = (async (input: string, init?: RequestInit) => {
+      calls.push([input, init]);
+      return new Response(JSON.stringify({ profile: { nickname: "小明", avatarSeed: "host-blue", avatarUrl: url }, suggestedNickname: null }));
+    }) as unknown as typeof fetch;
+    await expect(fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", fetchImpl: okFetch }))
+      .resolves.toEqual({ status: "ready", profile: { nickname: "小明", avatarSeed: "host-blue", avatarUrl: url }, suggestedNickname: null });
+    expect(calls[0]?.[0]).toBe("/api/live-viewer-profile?vendorId=vendor-1&liveId=live-1");
+    expect(calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+
+    const failing = (async () => new Response("{}", { status: 503 })) as unknown as typeof fetch;
+    await expect(fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", fetchImpl: failing })).resolves.toEqual({ status: "error" });
+  });
+
+  it("stops when the caller aborts", async () => {
+    const controller = new AbortController();
+    const pending = fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", signal: controller.signal, fetchImpl: hangingFetch });
+    controller.abort();
+    await expect(pending).resolves.toEqual({ status: "error" });
   });
 });
 

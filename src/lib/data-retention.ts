@@ -11,6 +11,13 @@ import { Prisma, type PrismaClient } from "@prisma/client";
  * - AnalyticsEvent: rows older than the window are deleted (their
  *   TrackingDelivery logs cascade).
  * - AuditLog: the IP address is cleared; the audit entry itself is kept.
+ * - LiveViewerProfile (viewer nicknames): deleted 30 days after the live
+ *   ended and its replay closed, once the profile itself has been idle that
+ *   long. Chat messages keep their row and fall back to the registration
+ *   name (their viewerProfileId is cleared in the same statement). Evergreen
+ *   lives never end, so their profiles stay; idle ones only release their
+ *   name after 7 days (src/lib/live-viewer-profile.ts). TODO: decide a
+ *   retention for evergreen profiles with the owner.
  *
  * The windows are provisional defaults (180 / 365 / 365 days) until the owner
  * fixes them on legal advice; each can be overridden by an environment
@@ -28,6 +35,9 @@ export const DATA_RETENTION_DEFAULT_DAYS = {
   analyticsEventDays: 365,
   auditLogIpDays: 365,
 } as const;
+
+/** Days after a live ended (and its replay closed) before its viewer nicknames are deleted. */
+export const LIVE_VIEWER_PROFILE_RETENTION_DAYS = 30;
 
 const MIN_DAYS = 30;
 const MAX_DAYS = 3650;
@@ -73,6 +83,7 @@ export type DataRetentionResult = {
   webhookPayloadsPurged: number;
   analyticsEventsDeleted: number;
   auditLogIpsCleared: number;
+  liveViewerProfilesDeleted: number;
   /** True when a category hit the per-run batch cap and needs another run. */
   remaining: boolean;
 };
@@ -139,10 +150,33 @@ export async function purgeExpiredData(
         LIMIT ${batchSize}
      )`, batchSize, maxBatches);
 
+  // Fixed window (not configurable): nicknames have no use after the room closed.
+  const profileCutoff = cutoff(LIVE_VIEWER_PROFILE_RETENTION_DAYS);
+  const profiles = await drain(() => db.$executeRaw`
+    WITH "doomed" AS (
+      SELECT "profile"."id"
+        FROM "LiveViewerProfile" "profile"
+        JOIN "Live" "live" ON "live"."vendorId" = "profile"."vendorId" AND "live"."id" = "profile"."liveId"
+       WHERE "profile"."lastActiveAt" < ${profileCutoff}
+         AND "live"."endedAt" IS NOT NULL
+         AND "live"."endedAt" < ${profileCutoff}
+         AND ("live"."replayEnabled" = false
+              OR ("live"."replayAvailableUntil" IS NOT NULL AND "live"."replayAvailableUntil" < ${profileCutoff}))
+       ORDER BY "profile"."id"
+       LIMIT ${batchSize}
+    ), "detached" AS (
+      UPDATE "LiveChatMessage"
+         SET "viewerProfileId" = NULL
+       WHERE "viewerProfileId" IN (SELECT "id" FROM "doomed")
+    )
+    DELETE FROM "LiveViewerProfile"
+     WHERE "id" IN (SELECT "id" FROM "doomed")`, batchSize, maxBatches);
+
   return {
     webhookPayloadsPurged: webhook.total,
     analyticsEventsDeleted: analytics.total,
     auditLogIpsCleared: audit.total,
-    remaining: webhook.remaining || analytics.remaining || audit.remaining,
+    liveViewerProfilesDeleted: profiles.total,
+    remaining: webhook.remaining || analytics.remaining || audit.remaining || profiles.remaining,
   };
 }

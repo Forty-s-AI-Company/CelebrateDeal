@@ -7,18 +7,36 @@ import { hashLiveViewerToken } from "@/lib/live-quota-admission";
 /**
  * 觀眾在直播間的暱稱與頭像（owner 2026-11-26，參考幫賣）。
  *
+ * 這是顯示用的名字，不是安全控制：它不證明身分、不給任何權限，留言門檻仍是
+ * 已驗證 Email 的報名；擋入場只在前端，伺服器的播放來源不檢查暱稱。
+ *
  * - 身分：長效、不透明的 profile cookie。資料庫只存它與 liveId 的雜湊，同一個
  *   瀏覽器回到同一場直播就沿用；不同直播的列無法互相連結。admission 的
  *   viewer session 只活 90 秒、離開就刪除，不能當作「記住」的依據。
  * - 範圍：所有讀寫都綁定 admission session 這一列的 vendorId／liveId（伺服器
  *   紀錄），client 傳來的值只用來比對。
+ * - 「直播間」＝這場直播（liveId）：聊天訊息本身只以 liveId 分，指定場次與
+ *   常青場的各場次共用同一個聊天室，所以名稱唯一性也以 liveId 為範圍；改用
+ *   「7 天沒活動就不再佔用名稱」避免常青場的名字永遠被佔住。
  * - 不可重複：同一場直播內其他觀眾的暱稱（資料庫唯一鍵）、這場直播綁定的互動
- *   腳本中啟用角色的名稱、主辦（vendor）名稱，以及預設的「觀眾」。
+ *   腳本中啟用角色的名稱、主辦（vendor）名稱、預設的「觀眾」，以及近 7 天
+ *   在這場直播以報名姓名留言、沒有暱稱的觀眾名字。
+ * - 商家的關鍵字與身分黑名單同樣適用（由呼叫端傳入 moderation）。
  */
 
 export const LIVE_VIEWER_PROFILE_COOKIE = "celebratedeal_live_profile";
+/** Only `/api/live-viewer-profile` and `/api/live-chat/messages` read it. */
+export const LIVE_VIEWER_PROFILE_COOKIE_PATH = "/api";
 export const LIVE_VIEWER_PROFILE_COOKIE_MAX_AGE_SECONDS = 180 * 24 * 60 * 60;
 export const LIVE_VIEWER_NICKNAME_MAX_LENGTH = 20;
+/** A profile idle this long no longer holds its name. */
+export const LIVE_VIEWER_NICKNAME_HOLD_MS = 7 * 24 * 60 * 60 * 1_000;
+/** New profiles one admission session may create in one live. */
+export const LIVE_VIEWER_PROFILES_PER_ADMISSION = 3;
+/** lastActiveAt is refreshed at most this often. */
+const ACTIVITY_REFRESH_MS = 60 * 60 * 1_000;
+/** Recent chat authors without a nickname read for the reserved names. */
+const RECENT_AUTHOR_SCAN_LIMIT = 5_000;
 const PROFILE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 const ADMISSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 const RAW_NICKNAME_MAX_LENGTH = 200;
@@ -36,9 +54,12 @@ export type LiveViewerNicknameProblem = "empty" | "too_long" | "invalid_characte
 
 export type LiveViewerProfileErrorCode =
   | "access_denied"
+  | "blocked"
   | "invalid_nickname"
+  | "nickname_blocked"
   | "invalid_avatar"
-  | "nickname_taken";
+  | "nickname_taken"
+  | "too_many_profiles";
 
 export class LiveViewerProfileError extends Error {
   constructor(
@@ -51,11 +72,15 @@ export class LiveViewerProfileError extends Error {
 }
 
 export const LIVE_VIEWER_NICKNAME_TAKEN_MESSAGE = "這個名稱已經有人使用，請換一個";
+export const LIVE_VIEWER_NICKNAME_BLOCKED_MESSAGE = "這個名稱無法使用，請換一個";
 
 export function liveViewerProfileErrorMessage(error: LiveViewerProfileError) {
   if (error.code === "nickname_taken") return LIVE_VIEWER_NICKNAME_TAKEN_MESSAGE;
+  if (error.code === "nickname_blocked") return LIVE_VIEWER_NICKNAME_BLOCKED_MESSAGE;
   if (error.code === "invalid_avatar") return "請從清單中選擇頭像";
   if (error.code === "access_denied") return "直播連線已失效，請重新進入直播間";
+  if (error.code === "blocked") return "目前無法設定暱稱";
+  if (error.code === "too_many_profiles") return "操作太頻繁，請稍後再試";
   if (error.problem === "empty") return "請輸入暱稱";
   if (error.problem === "too_long") return `暱稱最多 ${LIVE_VIEWER_NICKNAME_MAX_LENGTH} 個字`;
   if (error.problem === "contains_url") return "暱稱不能包含網址";
@@ -76,8 +101,12 @@ export const LiveViewerProfileSaveSchema = z.object({
 }).strict();
 
 // Control, format (zero-width, bidi override), line/paragraph separators and
-// private-use code points never belong in a display name.
-const FORBIDDEN_CHARACTERS = /[\p{Cc}\p{Cf}\p{Co}\p{Zl}\p{Zp}]/u;
+// private-use code points never belong in a display name. ZWJ/ZWNJ are the
+// exception so emoji sequences and some scripts work; they are invisible to
+// the comparison key anyway.
+const FORBIDDEN_CHARACTERS = /[\p{Cc}\p{Co}\p{Zl}\p{Zp}]|(?![‌‍])\p{Cf}/u;
+/** Stacked combining marks ("zalgo") beyond two per base character. */
+const STACKED_MARKS = /\p{Mn}{3,}/u;
 // A scheme, "www." or a host with a common top-level domain ("abc.com",
 // "line.me"); initials such as "J.Lo" or "Mr.Smith" stay allowed.
 const URL_PATTERNS = [
@@ -88,8 +117,9 @@ const URL_PATTERNS = [
 
 /**
  * The comparison key for "is this name already used": NFKC (full-width →
- * half-width), case-insensitive, every whitespace removed. Used for viewer
- * nicknames, scripted role names and the vendor name alike.
+ * half-width), case-insensitive, every whitespace and format character
+ * removed. Used for viewer nicknames, chat author names, scripted role names
+ * and the vendor name alike.
  */
 export function liveViewerNicknameKey(value: string) {
   return value
@@ -107,7 +137,7 @@ export function normalizeLiveViewerNickname(value: unknown): NormalizedLiveViewe
   if (typeof value !== "string") return { ok: false, problem: "empty" };
   if (value.length > RAW_NICKNAME_MAX_LENGTH) return { ok: false, problem: "too_long" };
   const normalized = value.normalize("NFKC");
-  if (FORBIDDEN_CHARACTERS.test(normalized)) return { ok: false, problem: "invalid_characters" };
+  if (FORBIDDEN_CHARACTERS.test(normalized) || STACKED_MARKS.test(normalized)) return { ok: false, problem: "invalid_characters" };
   const nickname = normalized.replace(/[\s\p{Z}]+/gu, " ").trim();
   if (!nickname) return { ok: false, problem: "empty" };
   if (Array.from(nickname).length > LIVE_VIEWER_NICKNAME_MAX_LENGTH) return { ok: false, problem: "too_long" };
@@ -185,7 +215,7 @@ export function liveViewerProfileCookieOptions(request: Request) {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: new URL(request.url).protocol === "https:",
-    path: "/",
+    path: LIVE_VIEWER_PROFILE_COOKIE_PATH,
     maxAge: LIVE_VIEWER_PROFILE_COOKIE_MAX_AGE_SECONDS,
   };
 }
@@ -196,15 +226,17 @@ export type LiveViewerProfileView = {
   avatarUrl: string;
 };
 
-type ProfileRow = { id: string; nickname: string; avatarSeed: string };
+type ProfileRow = { id: string; nickname: string; avatarSeed: string; normalizedNickname: string | null; lastActiveAt: Date };
 
-function toView(row: ProfileRow | null): LiveViewerProfileView | null {
+const PROFILE_SELECT = { id: true, nickname: true, avatarSeed: true, normalizedNickname: true, lastActiveAt: true } as const;
+
+function toView(row: Pick<ProfileRow, "nickname" | "avatarSeed"> | null): LiveViewerProfileView | null {
   if (!row) return null;
   const avatarUrl = liveViewerAvatarUrl(row.avatarSeed);
   return avatarUrl ? { nickname: row.nickname, avatarSeed: row.avatarSeed, avatarUrl } : null;
 }
 
-type ProfileModels = Pick<PrismaClient, "liveViewerSession" | "liveViewerProfile" | "live">;
+type ProfileModels = Pick<PrismaClient, "liveViewerSession" | "liveViewerProfile" | "live" | "liveChatMessage">;
 
 /**
  * The (vendorId, liveId) of the caller's active admission, read from the
@@ -218,23 +250,27 @@ export async function resolveLiveViewerProfileScope(
   if (!input.admissionToken || !ADMISSION_TOKEN_PATTERN.test(input.admissionToken)) {
     throw new LiveViewerProfileError("access_denied");
   }
+  const tokenHash = hashLiveViewerToken(input.admissionToken);
   const session = await database.liveViewerSession.findUnique({
-    where: { tokenHash: hashLiveViewerToken(input.admissionToken) },
+    where: { tokenHash },
     select: { vendorId: true, liveId: true, expiresAt: true },
   });
   const now = input.now ?? new Date();
   if (!session || session.vendorId !== input.vendorId || session.liveId !== input.liveId || session.expiresAt <= now) {
     throw new LiveViewerProfileError("access_denied");
   }
-  return { vendorId: session.vendorId, liveId: session.liveId };
+  return { vendorId: session.vendorId, liveId: session.liveId, admissionTokenHash: tokenHash };
 }
 
-/** The profile row of this cookie in this live, or null. Callers own the scope. */
+/**
+ * The profile row of this cookie in this live, or null. Includes released
+ * rows (normalizedNickname NULL); `findActiveLiveViewerProfile` does not.
+ */
 export async function findLiveViewerProfile(
   database: Pick<PrismaClient, "liveViewerProfile">,
   scope: { vendorId: string; liveId: string },
   profileToken: string | null,
-) {
+): Promise<ProfileRow | null> {
   if (!isLiveViewerProfileToken(profileToken)) return null;
   return database.liveViewerProfile.findUnique({
     where: {
@@ -244,19 +280,46 @@ export async function findLiveViewerProfile(
         viewerKeyHash: hashLiveViewerProfileKey(profileToken, scope.liveId),
       },
     },
-    select: { id: true, nickname: true, avatarSeed: true },
+    select: PROFILE_SELECT,
+  });
+}
+
+/** The profile a chat message may use: this cookie's, still holding its name. */
+export async function findActiveLiveViewerProfile(
+  database: Pick<PrismaClient, "liveViewerProfile">,
+  scope: { vendorId: string; liveId: string },
+  profileToken: string | null,
+) {
+  const row = await findLiveViewerProfile(database, scope, profileToken);
+  return row && row.normalizedNickname !== null ? row : null;
+}
+
+/** Moves lastActiveAt forward at most once an hour, so reads stay cheap. */
+export async function touchLiveViewerProfile(
+  database: Pick<PrismaClient, "liveViewerProfile">,
+  profile: { id: string; lastActiveAt: Date },
+  now: Date,
+) {
+  if (now.getTime() - profile.lastActiveAt.getTime() < ACTIVITY_REFRESH_MS) return;
+  await database.liveViewerProfile.updateMany({
+    where: { id: profile.id, lastActiveAt: { lt: new Date(now.getTime() - ACTIVITY_REFRESH_MS) } },
+    data: { lastActiveAt: now },
   });
 }
 
 /**
  * Names a viewer may not take in this live: the vendor (brand) name, every
- * active role of the live's own interaction script, and the default "觀眾".
- * Only this vendor's script and roles count.
+ * active role of the live's own interaction script, the default "觀眾", and
+ * the registration name of anyone who posted here in the last 7 days without
+ * a nickname (except the caller's own registration). Only this vendor's
+ * script, roles and messages count.
  */
 export async function reservedLiveViewerNicknameKeys(
-  database: Pick<PrismaClient, "live">,
+  database: Pick<PrismaClient, "live" | "liveChatMessage">,
   scope: { vendorId: string; liveId: string },
+  options: { now?: Date; ownSubmissionId?: string | null } = {},
 ) {
+  const now = options.now ?? new Date();
   const live = await database.live.findFirst({
     where: { id: scope.liveId, vendorId: scope.vendorId },
     select: {
@@ -273,22 +336,61 @@ export async function reservedLiveViewerNicknameKeys(
     },
   });
   if (!live) throw new LiveViewerProfileError("access_denied");
+  const authors = await database.liveChatMessage.findMany({
+    where: {
+      vendorId: scope.vendorId,
+      liveId: scope.liveId,
+      source: "viewer",
+      viewerProfileId: null,
+      createdAt: { gte: new Date(now.getTime() - LIVE_VIEWER_NICKNAME_HOLD_MS) },
+      ...(options.ownSubmissionId ? { NOT: { formSubmissionId: options.ownSubmissionId } } : {}),
+    },
+    distinct: ["authorName"],
+    select: { authorName: true },
+    orderBy: [{ authorName: "asc" }],
+    take: RECENT_AUTHOR_SCAN_LIMIT,
+  });
   const names = [
     ...RESERVED_NICKNAMES,
     live.vendor.name,
     ...(live.interactionScript?.vendorId === scope.vendorId
       ? live.interactionScript.events.map((event) => event.role?.name ?? "")
       : []),
+    ...authors.map((author) => author.authorName),
   ];
   return new Set(names.map(liveViewerNicknameKey).filter(Boolean));
 }
 
+/**
+ * The merchant's moderation for this viewer, resolved by the route from the
+ * vendor blacklist (identity: verified registration email/phone, IP, admission
+ * visitor id; keywords). Kept as a callback so this module does not depend on
+ * the chat module.
+ */
+export type LiveViewerProfileModeration = {
+  identityBlocked: boolean;
+  isNicknameBlocked: (nickname: string) => boolean;
+  /** The caller's own verified registration, if any. */
+  ownSubmissionId: string | null;
+};
+
+export type ReadLiveViewerProfileResult = {
+  profile: LiveViewerProfileView | null;
+  /** A released profile's old name, offered again as the suggestion. */
+  previousNickname: string | null;
+};
+
 export async function readLiveViewerProfile(
   database: ProfileModels,
   input: { vendorId: string; liveId: string; admissionToken: string | null; profileToken: string | null; now?: Date },
-) {
-  const scope = await resolveLiveViewerProfileScope(database, input);
-  return toView(await findLiveViewerProfile(database, scope, input.profileToken));
+): Promise<ReadLiveViewerProfileResult> {
+  const now = input.now ?? new Date();
+  const scope = await resolveLiveViewerProfileScope(database, { ...input, now });
+  const row = await findLiveViewerProfile(database, scope, input.profileToken);
+  if (!row) return { profile: null, previousNickname: null };
+  if (row.normalizedNickname === null) return { profile: null, previousNickname: row.nickname };
+  await touchLiveViewerProfile(database, row, now);
+  return { profile: toView(row), previousNickname: null };
 }
 
 function isUniqueViolation(error: unknown) {
@@ -308,11 +410,28 @@ export type SaveLiveViewerProfileResult = {
   issuedProfileToken: string | null;
 };
 
+async function assertProfileCreationAllowed(
+  database: Pick<PrismaClient, "liveViewerProfile">,
+  scope: { vendorId: string; liveId: string; admissionTokenHash: string },
+  viewerKeyHash: string,
+) {
+  const existing = await database.liveViewerProfile.findUnique({
+    where: { vendorId_liveId_viewerKeyHash: { vendorId: scope.vendorId, liveId: scope.liveId, viewerKeyHash } },
+    select: { id: true },
+  });
+  if (existing) return;
+  const created = await database.liveViewerProfile.count({
+    where: { vendorId: scope.vendorId, liveId: scope.liveId, createdBySessionHash: scope.admissionTokenHash },
+  });
+  if (created >= LIVE_VIEWER_PROFILES_PER_ADMISSION) throw new LiveViewerProfileError("too_many_profiles");
+}
+
 /**
- * Creates or renames this viewer's profile in one live. Validation and the
- * reserved-name check run first; the (vendorId, liveId, normalizedNickname)
- * unique index decides races between viewers. Every write is keyed by the
- * admission session's vendorId and liveId.
+ * Creates or renames this viewer's profile in one live. Validation, the
+ * merchant's moderation and the reserved-name check run first; an idle
+ * holder of the same name is released; the (vendorId, liveId,
+ * normalizedNickname) unique index then decides races between viewers. Every
+ * write is keyed by the admission session's vendorId and liveId.
  */
 export async function saveLiveViewerProfile(
   database: ProfileModels,
@@ -324,23 +443,45 @@ export async function saveLiveViewerProfile(
     nickname: unknown;
     avatarSeed?: string | null;
     avatarUrl?: string | null;
+    moderate?: (scope: { vendorId: string; liveId: string }) => Promise<LiveViewerProfileModeration>;
     now?: Date;
   },
 ): Promise<SaveLiveViewerProfileResult> {
-  const scope = await resolveLiveViewerProfileScope(database, input);
+  const now = input.now ?? new Date();
+  const scope = await resolveLiveViewerProfileScope(database, { ...input, now });
   const nickname = normalizeLiveViewerNickname(input.nickname);
   if (!nickname.ok) throw new LiveViewerProfileError("invalid_nickname", nickname.problem);
   const avatarSeed = resolveLiveViewerAvatarSeed(input);
   if (!avatarSeed) throw new LiveViewerProfileError("invalid_avatar");
 
-  const reserved = await reservedLiveViewerNicknameKeys(database, scope);
+  const moderation = input.moderate
+    ? await input.moderate({ vendorId: scope.vendorId, liveId: scope.liveId })
+    : { identityBlocked: false, isNicknameBlocked: () => false, ownSubmissionId: null };
+  if (moderation.identityBlocked) throw new LiveViewerProfileError("blocked");
+  if (moderation.isNicknameBlocked(nickname.nickname)) throw new LiveViewerProfileError("nickname_blocked");
+
+  const reserved = await reservedLiveViewerNicknameKeys(database, scope, { now, ownSubmissionId: moderation.ownSubmissionId });
   if (reserved.has(nickname.key)) throw new LiveViewerProfileError("nickname_taken");
 
   const profileToken = isLiveViewerProfileToken(input.profileToken) ? input.profileToken : createLiveViewerProfileToken();
   const issuedProfileToken = profileToken === input.profileToken ? null : profileToken;
   const viewerKeyHash = hashLiveViewerProfileKey(profileToken, scope.liveId);
-  const data = { nickname: nickname.nickname, normalizedNickname: nickname.key, avatarSeed };
+  await assertProfileCreationAllowed(database, scope, viewerKeyHash);
 
+  // An idle holder (7 days) of this name gives it up; its row stays but is
+  // no longer shown or reserved. Active holders are left for the unique index.
+  await database.liveViewerProfile.updateMany({
+    where: {
+      vendorId: scope.vendorId,
+      liveId: scope.liveId,
+      normalizedNickname: nickname.key,
+      lastActiveAt: { lt: new Date(now.getTime() - LIVE_VIEWER_NICKNAME_HOLD_MS) },
+      NOT: { viewerKeyHash },
+    },
+    data: { normalizedNickname: null },
+  });
+
+  const data = { nickname: nickname.nickname, normalizedNickname: nickname.key, avatarSeed, lastActiveAt: now };
   // The same viewer can race itself (two tabs); the loser of the
   // viewerKeyHash insert retries once as an update.
   for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -349,9 +490,15 @@ export async function saveLiveViewerProfile(
         where: {
           vendorId_liveId_viewerKeyHash: { vendorId: scope.vendorId, liveId: scope.liveId, viewerKeyHash },
         },
-        create: { vendorId: scope.vendorId, liveId: scope.liveId, viewerKeyHash, ...data },
+        create: {
+          vendorId: scope.vendorId,
+          liveId: scope.liveId,
+          viewerKeyHash,
+          createdBySessionHash: scope.admissionTokenHash,
+          ...data,
+        },
         update: data,
-        select: { id: true, nickname: true, avatarSeed: true },
+        select: PROFILE_SELECT,
       });
       const profile = toView(row);
       if (!profile) throw new Error("Saved live viewer profile was not safe to project.");
