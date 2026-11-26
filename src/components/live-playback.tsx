@@ -1722,7 +1722,8 @@ function useAdmittedPlaybackAnalytics({ live, admitted, visitorId, referralCode,
  * Attaches an HLS source to the player (hls.js first, native HLS only when
  * hls.js is unsupported). F-093: a signed Stream URL is renewed through the
  * admission-checked playback-source endpoint before its token lapses and
- * whenever playback hits an expired token.
+ * whenever playback hits an expired token (Cloudflare 401／403); on hls.js the
+ * renewed token also re-signs the VOD segment URIs without reloading the player.
  */
 export function useHlsPlayback({
   videoRef,

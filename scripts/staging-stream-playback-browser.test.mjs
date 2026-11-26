@@ -9,9 +9,9 @@ import {
   formatReceiptLines, receiptLeaks, redactStreamUrl, renewalDelaySeconds, replayDeadline,
   replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor, taipeiDateTimeLocal,
   describeErrorSample, formatRenewalErrorsLine, streamSegmentIdentity, summarizeStreamErrors,
-  validUploadUrl, withCorruptedSignature,
+  validUploadUrl, withCorruptedSignature, assessNewTokenUse, createTokenAttribution, playlistReferences, shouldRefuseInRecovery,
 } from "./staging-stream-playback-browser-core.mjs";
-import { describeFailure, probeAllowedOrigins, runStreamPlaybackBrowser, safeReceiptText } from "./staging-stream-playback-browser.mjs";
+import { describeFailure, probeAllowedOrigins, RECOVERY_CASES, runStreamPlaybackBrowser, safeReceiptText } from "./staging-stream-playback-browser.mjs";
 
 const uid = "0123456789abcdef0123456789abcdef";
 const b64 = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -650,5 +650,105 @@ test("the renewal errors line is one grep-able key=value line and leaks nothing"
   assert.ok(line);
   assert.match(line, /^stream_playback_renewal_errors=total:1 injected_excluded:0 status:401:1 shapes:PROVIDER\/UID\/SEGMENT:1 initial_exp_s:90 renewal_s:80 first_s:100 last_s:100 before_exp:0 after_exp_0_60:1 after_exp_later:0 exp_unknown:0 retried_ok:1 never_ok:0 playlist_reloads_between:0 last_playlist_before_first_s:null sample_1=401\|application\/json\|/u);
   assert.equal(line.includes(uid), false);
+  assert.equal(receiptLeaks(JSON.stringify(receipt)), false);
+});
+
+const firstPlaybackToken = token({ nbf, exp: nbf + 30 + 1800 });
+const renewedPlaybackToken = token({ nbf: nbf + 1680, exp: nbf + 30 + 3480 });
+const tokenPlaylist = (value) => `https://videodelivery.net/${value}/manifest/stream_t0a1b2c3d4e5f6a7b8c9d0.m3u8`;
+const signedSegment = (n, p) => `https://videodelivery.net/${uid}/video/720/seg_${n}.mp4?p=${p}&s=sig`;
+const mediaPlaylistFor = (p) => [
+  "#EXTM3U", `#EXT-X-MAP:URI="/${uid}/video/720/init.mp4?p=${p}&s=sig"`,
+  "#EXTINF:6.0,", `/${uid}/video/720/seg_1.mp4?p=${p}&s=sig`, "#EXTINF:6.0,", `/${uid}/video/720/seg_2.mp4?p=${p}&s=sig`, "#EXT-X-ENDLIST",
+].join("\n");
+
+test("uid-form URIs are attributed to the token their playlist was fetched with", () => {
+  assert.deepEqual(playlistReferences(mediaPlaylistFor("A"), tokenPlaylist(firstPlaybackToken)), [
+    `https://videodelivery.net/${uid}/video/720/init.mp4?p=A&s=sig`, signedSegment(1, "A"), signedSegment(2, "A"),
+  ]);
+  const attribution = createTokenAttribution();
+  attribution.recordPlaylist(tokenPlaylist(firstPlaybackToken), mediaPlaylistFor("A"), 0);
+  attribution.recordPlaylist(tokenPlaylist(renewedPlaybackToken), mediaPlaylistFor("B"), 1);
+  assert.equal(attribution.tokenOf(signedSegment(1, "A")), 0);
+  assert.equal(attribution.tokenOf(signedSegment(2, "B")), 1);
+  // Same segment with a signature no recorded playlist listed: unknown.
+  assert.equal(attribution.tokenOf(signedSegment(1, "C")), -1);
+  // A token-form URL keeps its own token; token-form references are never attributed.
+  assert.equal(attribution.tokenOf(tokenPlaylist(renewedPlaybackToken), 1), 1);
+  attribution.recordPlaylist(tokenPlaylist(firstPlaybackToken), `#EXTM3U\n${tokenPlaylist(renewedPlaybackToken)}\n`, 0);
+  assert.equal(attribution.tokenOf(tokenPlaylist(renewedPlaybackToken)), -1);
+  // An unattributed playlist (token -1) records nothing.
+  attribution.recordPlaylist(tokenPlaylist(firstPlaybackToken), mediaPlaylistFor("D"), -1);
+  assert.equal(attribution.tokenOf(signedSegment(1, "D")), -1);
+});
+
+test("renewal must load a renewed-token playlist and re-signed segments before the first exp, and nothing of the first token after it", () => {
+  const entry = (atMs, tokenIndex, kind, form, status = 200, injected = false) => ({ atMs, status, kind, form, token: tokenIndex, injected });
+  const options = { firstIndex: 0, renewedIndex: 1, renewedAtMs: 1_680_000, initialExpMs: 1_800_000 };
+
+  assert.deepEqual(assessNewTokenUse([
+    entry(1_000_000, 0, "SEGMENT", "UID"),
+    entry(1_680_500, 1, "PLAYLIST", "TOKEN"),
+    entry(1_690_000, 1, "SEGMENT", "UID"),
+    entry(1_850_000, 1, "SEGMENT", "UID"),
+  ], options), {
+    newTokenStreamRequests: 2, newTokenPlaylistRequests: 1, newTokenSegmentRequests: 1, firstTokenRequestsAfterExp: 0, reasons: [],
+  });
+
+  // Run 45713686375: the renewed token was fetched but never used; the old signatures failed after exp.
+  assert.deepEqual(assessNewTokenUse([
+    entry(1_000_000, 0, "SEGMENT", "UID"),
+    entry(1_790_000, 0, "SEGMENT", "UID"),
+    entry(1_800_600, 0, "SEGMENT", "UID", 401),
+  ], options).reasons, [
+    "NEW_TOKEN_PLAYLIST_NOT_LOADED_BEFORE_FIRST_EXP", "NEW_TOKEN_SEGMENTS_NOT_LOADED_BEFORE_FIRST_EXP", "FIRST_TOKEN_USED_AFTER_EXP",
+  ]);
+
+  // Before the lock Cloudflare still answers 200: a first-token request after exp fails the check anyway.
+  assert.deepEqual(assessNewTokenUse([
+    entry(1_680_500, 1, "PLAYLIST", "TOKEN"), entry(1_690_000, 1, "SEGMENT", "UID"), entry(1_810_000, 0, "SEGMENT", "UID"),
+  ], options).reasons, ["FIRST_TOKEN_USED_AFTER_EXP"]);
+
+  // Only inside the window, only 2xx, never the runner's own answers.
+  assert.deepEqual(assessNewTokenUse([
+    entry(1_679_000, 1, "PLAYLIST", "TOKEN"), entry(1_800_000, 1, "SEGMENT", "UID"),
+    entry(1_700_000, 1, "SEGMENT", "UID", 403), entry(1_700_000, 1, "PLAYLIST", "TOKEN", 200, true),
+    entry(1_810_000, 0, "SEGMENT", "UID", 401, true),
+  ], options).reasons, ["NEW_TOKEN_PLAYLIST_NOT_LOADED_BEFORE_FIRST_EXP", "NEW_TOKEN_SEGMENTS_NOT_LOADED_BEFORE_FIRST_EXP"]);
+});
+
+test("recovery covers Cloudflare's persistent 401 next to the lifted 403 cases", () => {
+  assert.deepEqual(RECOVERY_CASES.map((item) => `${item.mode}/${item.state}/${item.httpStatus ?? 403}/${item.persistent === true}`), [
+    "token_expiry/playing/403/false", "token_expiry/paused/403/false",
+    "token_expiry_401/playing/401/true", "token_expiry_401/paused/401/true",
+    "blanket_block/playing/403/false", "blanket_block/paused/403/false",
+  ]);
+  const decide = (value, owner, mode = "token_expiry_401", persistent = true) => {
+    const parsed = classifyStreamUrl(value);
+    return shouldRefuseInRecovery({
+      mode, persistent, parsed, providerUid: parsed?.form === "UID", owner, blockedToken: firstPlaybackToken, blockedIndex: 0,
+    });
+  };
+  // Persistent 401: the expired token and what was signed for it are refused, renewed ones pass.
+  assert.equal(decide(tokenPlaylist(firstPlaybackToken), 0), true);
+  assert.equal(decide(signedSegment(1, "A"), 0), true);
+  assert.equal(decide(signedSegment(1, "unlisted"), -1), true);
+  assert.equal(decide(tokenPlaylist(renewedPlaybackToken), 1), false);
+  assert.equal(decide(signedSegment(1, "B"), 1), false);
+  assert.equal(decide(`https://videodelivery.net/${uid}/thumbnails/thumbnail.jpg`, -1), false);
+  // The lifted 403 keeps its worst case: every provider uid-form URI while active.
+  assert.equal(decide(signedSegment(1, "B"), 1, "token_expiry", false), true);
+  assert.equal(decide(tokenPlaylist(renewedPlaybackToken), 1, "token_expiry", false), false);
+  assert.equal(decide(tokenPlaylist(renewedPlaybackToken), 1, "blanket_block", false), true);
+});
+
+test("the renewal line reports the renewed token's use and leaks nothing", () => {
+  const receipt = createReceipt(env);
+  receipt.renewal = {
+    status: "PASS", observedAfterSeconds: 1679, expectedAfterSeconds: 1679, newTokenStreamRequests: 9, newTokenPlaylistRequests: 1,
+    newTokenSegmentRequests: 8, firstTokenRequestsAfterExp: 0, renewedExpEqualsDeadline: true, progress: { maxStallSeconds: 0 },
+  };
+  const line = formatReceiptLines(receipt).split("\n").find((item) => item.startsWith("stream_playback_renewal="));
+  assert.equal(line, "stream_playback_renewal=status:PASS after_s:1679 expected_s:1679 new_token_requests:9 new_token_playlists:1 new_token_segments:8 first_token_after_exp:0 renewed_exp_equals_deadline:true max_stall_s:0");
   assert.equal(receiptLeaks(JSON.stringify(receipt)), false);
 });
