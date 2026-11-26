@@ -5,8 +5,8 @@ const db = {
   liveViewerProfile: { findUnique: vi.fn(), upsert: vi.fn(), count: vi.fn(), updateMany: vi.fn() },
   live: { findFirst: vi.fn() },
   formSubmission: { findFirst: vi.fn() },
-  liveChatMessage: { findMany: vi.fn() },
   blacklist: { findMany: vi.fn() },
+  $queryRaw: vi.fn(),
 };
 const rateLimit = vi.hoisted(() => ({ checkRateLimit: vi.fn<(...args: unknown[]) => Promise<Response | null>>(async () => null) }));
 
@@ -54,7 +54,7 @@ beforeEach(() => {
   db.liveViewerProfile.upsert.mockResolvedValue({ id: "profile-1", nickname: "小明", avatarSeed: "host-blue", normalizedNickname: "小明", lastActiveAt: new Date() });
   db.liveViewerProfile.count.mockResolvedValue(0);
   db.liveViewerProfile.updateMany.mockResolvedValue({ count: 0 });
-  db.liveChatMessage.findMany.mockResolvedValue([]);
+  db.$queryRaw.mockResolvedValue([]);
   db.blacklist.findMany.mockResolvedValue([]);
   db.live.findFirst.mockResolvedValue({ vendor: { name: "幸福烘焙" }, interactionScript: null });
   db.formSubmission.findFirst.mockResolvedValue(null);
@@ -89,6 +89,7 @@ describe("GET /api/live-viewer-profile", () => {
     expect(await response.json()).toEqual({
       profile: { nickname: "小明", avatarSeed: "care-teal", avatarUrl: interactionRoleAvatarUrl("care-teal") },
       suggestedNickname: null,
+      canSetNickname: true,
     });
     expect(db.liveViewerProfile.findUnique).toHaveBeenCalledWith(expect.objectContaining({
       where: { vendorId_liveId_viewerKeyHash: { vendorId: "vendor-1", liveId: "live-1", viewerKeyHash: hashLiveViewerProfileKey(PROFILE, "live-1") } },
@@ -99,17 +100,30 @@ describe("GET /api/live-viewer-profile", () => {
     const chat = createFormSubmissionChatSessionToken({ submissionId: "submission-1", now: new Date() });
     db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", name: "王大明", email: "a@example.test", phone: null, formId: "form-1", live: { formId: "form-1" } });
     const response = await GET(getRequest(undefined, `${LIVE_VIEWER_SESSION_COOKIE}=${ADMISSION}; ${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${encodeURIComponent(chat)}`));
-    expect(await response.json()).toEqual({ profile: null, suggestedNickname: "王大明" });
+    expect(await response.json()).toEqual({ profile: null, suggestedNickname: "王大明", canSetNickname: true });
     expect(db.formSubmission.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ id: "submission-1", liveId: "live-1", verificationStatus: "VERIFIED", form: { vendorId: "vendor-1" } }),
     }));
   });
 
-  it("asks again with the old name when the profile's name was released", async () => {
+  it("asks again with the old name when the profile's name was released, ahead of the registration name", async () => {
     db.liveViewerProfile.findUnique.mockResolvedValue({ id: "profile-1", nickname: "小雨", avatarSeed: "care-teal", normalizedNickname: null, lastActiveAt: new Date(0) });
+    db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", name: "王大明", email: "a@example.test", phone: null, formId: "form-1", live: { formId: "form-1" } });
+    const chat = createFormSubmissionChatSessionToken({ submissionId: "submission-1", now: new Date() });
+    const response = await GET(getRequest(undefined, `${LIVE_VIEWER_SESSION_COOKIE}=${ADMISSION}; ${LIVE_VIEWER_PROFILE_COOKIE}=${PROFILE}; ${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${encodeURIComponent(chat)}`));
+    expect(await response.json()).toEqual({ profile: null, suggestedNickname: "小雨", canSetNickname: true });
+  });
+
+  it("tells a blacklisted viewer the nickname step is unavailable, without saying why", async () => {
+    db.blacklist.findMany.mockResolvedValue([{ identifier: hashLiveViewerToken(ADMISSION), identifierType: "visitor_id" }]);
+    db.liveViewerProfile.findUnique.mockResolvedValue({ id: "profile-1", nickname: "小明", avatarSeed: "care-teal", normalizedNickname: "小明", lastActiveAt: new Date() });
     const response = await GET(getRequest(undefined, `${LIVE_VIEWER_SESSION_COOKIE}=${ADMISSION}; ${LIVE_VIEWER_PROFILE_COOKIE}=${PROFILE}`));
-    expect(await response.json()).toEqual({ profile: null, suggestedNickname: "小雨" });
-    expect(db.formSubmission.findFirst).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toEqual({ profile: null, suggestedNickname: null, canSetNickname: false, reason: "unavailable" });
+    expect(JSON.stringify(payload)).not.toMatch(/visitor|email|phone|ip|blacklist/iu);
+    // The blacklist is read for this vendor only.
+    expect(db.blacklist.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1" }) }));
   });
 
   it("passes a rate limit refusal through", async () => {
@@ -183,6 +197,21 @@ describe("PUT /api/live-viewer-profile", () => {
     expect(await response.json()).toMatchObject({ error: "too_many_profiles" });
     expect(setCookie(response, LIVE_VIEWER_PROFILE_COOKIE)).toBeNull();
     expect(db.liveViewerProfile.upsert).not.toHaveBeenCalled();
+  });
+
+  it("limits new profiles per IP and live each hour, but not renames", async () => {
+    rateLimit.checkRateLimit.mockImplementation(async (_request: unknown, key: unknown) => (
+      key === "live-viewer-profile-create:live-1" ? new Response(null, { status: 429 }) : null
+    ));
+    const response = await PUT(putRequest(body));
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({ error: "too_many_profiles" });
+    expect(rateLimit.checkRateLimit).toHaveBeenCalledWith(expect.any(Request), "live-viewer-profile-create:live-1", 10, 3_600_000);
+    expect(db.liveViewerProfile.upsert).not.toHaveBeenCalled();
+
+    db.liveViewerProfile.findUnique.mockResolvedValue({ id: "profile-1" });
+    const renamed = await PUT(putRequest(body, `${LIVE_VIEWER_SESSION_COOKIE}=${ADMISSION}; ${LIVE_VIEWER_PROFILE_COOKIE}=${PROFILE}`));
+    expect(renamed.status).toBe(200);
   });
 
   it("returns a generic 500 when storage fails", async () => {

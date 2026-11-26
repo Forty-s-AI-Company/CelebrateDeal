@@ -23,6 +23,9 @@
 --     statement) lets a Live or Vendor delete cascade to both tables.
 --     "authorName" stays the registration name snapshot, so merchant views
 --     do not change.
+--   * "LiveChatMessage"."viewerProfileRemovedAt": set when the retention sweep
+--     deletes the message's profile (and clears "viewerProfileId"), so the
+--     room keeps showing "觀眾" instead of the author's registration name.
 --
 -- Locks: ALTER TABLE "LiveChatMessage" (ADD COLUMN, ADD CONSTRAINT CHECK,
 -- ADD FOREIGN KEY) takes ACCESS EXCLUSIVE on "LiveChatMessage" until COMMIT,
@@ -71,7 +74,8 @@ CREATE TABLE "LiveViewerProfile" (
 );
 
 -- AlterTable
-ALTER TABLE "LiveChatMessage" ADD COLUMN "viewerProfileId" TEXT;
+ALTER TABLE "LiveChatMessage" ADD COLUMN "viewerProfileId" TEXT,
+ADD COLUMN "viewerProfileRemovedAt" TIMESTAMP(3);
 
 -- CreateIndex
 CREATE UNIQUE INDEX "LiveViewerProfile_vendorId_liveId_id_key" ON "LiveViewerProfile"("vendorId", "liveId", "id");
@@ -110,7 +114,11 @@ ALTER TABLE "LiveChatMessage" ADD CONSTRAINT "LiveChatMessage_vendorId_liveId_vi
 -- role or staff row). Every existing row has NULL, so the validation scan
 -- passes. It runs under the ACCESS EXCLUSIVE lock taken above.
 ALTER TABLE "LiveChatMessage" ADD CONSTRAINT "LiveChatMessage_viewerProfile_source_check"
-  CHECK ("viewerProfileId" IS NULL OR ("source" = 'viewer' AND "roleId" IS NULL));
+  CHECK (
+    ("viewerProfileId" IS NULL AND "viewerProfileRemovedAt" IS NULL)
+    OR ("source" = 'viewer' AND "roleId" IS NULL
+        AND NOT ("viewerProfileId" IS NOT NULL AND "viewerProfileRemovedAt" IS NOT NULL))
+  );
 
 -- Same defense in depth as every other public table (20261020090000).
 ALTER TABLE "LiveViewerProfile" ENABLE ROW LEVEL SECURITY;

@@ -85,6 +85,8 @@ type StoredViewerMessage = {
   isSimulated: boolean;
   createdAt: Date;
   viewerProfileId?: string | null;
+  /** Set when the retention sweep deleted this message's profile. */
+  viewerProfileRemovedAt?: Date | null;
   /** The viewer's current nickname profile in this live, when it posted with one. */
   viewerProfile?: { nickname: string; avatarSeed: string; normalizedNickname: string | null } | null;
   /** The author's contact, read only to apply the vendor blacklist to the nickname. */
@@ -278,6 +280,7 @@ function messageSelect() {
     isSimulated: true,
     createdAt: true,
     viewerProfileId: true,
+    viewerProfileRemovedAt: true,
     viewerProfile: { select: { nickname: true, avatarSeed: true, normalizedNickname: true } },
     formSubmission: { select: { email: true, phone: true } },
   } as const;
@@ -296,22 +299,29 @@ function isContactBlocked(rows: BlacklistRows, contact: { email: string; phone: 
   });
 }
 
+/** The room's default name: never the author's registration name. */
+const ANONYMOUS_VIEWER_NAME = "觀眾";
+
 /**
- * Name and avatar shown for a viewer message. The nickname is used only while
- * its profile still holds the name, the nickname passes the vendor's keyword
- * rules and the author's email/phone is not blacklisted; otherwise the
- * registration name shows without an avatar ("觀眾" when that name is itself
- * blocked).
+ * Name and avatar shown for a viewer message.
+ * - No nickname ever: the registration name (decision 2).
+ * - Nickname profile released (idle, name taken over) or deleted by the
+ *   retention sweep: "觀眾", so a nickname never turns back into the real name.
+ * - Nickname hits the vendor's keyword rules, or the author's email/phone is
+ *   blacklisted (a penalty): the registration name, or "觀眾" when that name
+ *   is itself keyword-blocked.
+ * - Otherwise the nickname with its preset avatar.
+ * IP and visitor-id rules are not known for old messages, so they never
+ * downgrade a nickname here; changes show on the next poll or reload.
  */
 function viewerDisplayActor(message: StoredViewerMessage, rows: BlacklistRows) {
+  if (message.viewerProfileRemovedAt) return { name: ANONYMOUS_VIEWER_NAME };
   const profile = message.viewerProfileId ? message.viewerProfile ?? null : null;
   if (!profile) return { name: normalizeDisplayName(message.authorName) };
-  const usable = profile.normalizedNickname !== null
-    && !isKeywordBlocked(rows, profile.nickname)
-    && !isContactBlocked(rows, message.formSubmission);
-  if (!usable) {
-    return { name: isKeywordBlocked(rows, message.authorName) ? "觀眾" : normalizeDisplayName(message.authorName) };
+  if (isKeywordBlocked(rows, profile.nickname) || isContactBlocked(rows, message.formSubmission)) {
+    return { name: isKeywordBlocked(rows, message.authorName) ? ANONYMOUS_VIEWER_NAME : normalizeDisplayName(message.authorName) };
   }
+  if (profile.normalizedNickname === null) return { name: ANONYMOUS_VIEWER_NAME };
   const avatarUrl = liveViewerAvatarUrl(profile.avatarSeed);
   return { name: normalizeDisplayName(profile.nickname), ...(avatarUrl ? { avatarUrl } : {}) };
 }
@@ -438,19 +448,6 @@ async function resolveVerifiedViewerContext(
 }
 
 /**
- * The verified registrant's name for this live (the nickname suggestion), or
- * null without a valid chat session. Admission must already be resolved.
- */
-export async function resolveViewerRegistrationName(
-  database: LiveChatModels,
-  input: { vendorId: string; liveId: string; chatSessionToken: string | null; now?: Date },
-  admission: ViewerChatAdmissionContext,
-) {
-  const context = await resolveVerifiedViewerContext(database, input, admission);
-  return context ? context.submission.name : null;
-}
-
-/**
  * The vendor's chat moderation applied to a nickname change: the same
  * identity rules a post uses (verified registration email/phone when present,
  * the request IP, the admission visitor id) and the same keyword rules as a
@@ -472,6 +469,7 @@ export async function resolveViewerProfileModeration(
     identityBlocked,
     isNicknameBlocked: (nickname) => isKeywordBlocked(rows, nickname),
     ownSubmissionId: context?.submission.id ?? null,
+    ownRegistrationName: context?.submission.name ?? null,
   };
 }
 

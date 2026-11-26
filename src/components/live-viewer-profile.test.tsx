@@ -6,6 +6,7 @@ import type { ScheduledRuntimeMessage, ViewerRuntimeMessage } from "@/lib/live-c
 import { parseViewerRuntimeMessage } from "@/lib/live-updates-client";
 import { isNicknameMissing, LiveChatPanel } from "./live-chat-panel";
 import {
+  abortAfter,
   ChatAvatar,
   fetchLiveViewerProfile,
   LIVE_VIEWER_AVATAR_OPTIONS,
@@ -14,6 +15,7 @@ import {
   liveViewerProfileRequiredForChat,
   LiveViewerProfileDialog,
   LiveViewerProfileLayer,
+  liveViewerProfileSaveOutcome,
   parseLiveViewerProfile,
   useLiveViewerProfileGate,
 } from "./live-viewer-profile";
@@ -119,6 +121,68 @@ describe("profile read", () => {
 
     const failing = (async () => new Response("{}", { status: 503 })) as unknown as typeof fetch;
     await expect(fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", fetchImpl: failing })).resolves.toEqual({ status: "error" });
+  });
+
+  it("works in browsers without AbortSignal.any or AbortSignal.timeout (Safari 16.4, Chrome 111)", async () => {
+    const any = Object.getOwnPropertyDescriptor(AbortSignal, "any");
+    const timeout = Object.getOwnPropertyDescriptor(AbortSignal, "timeout");
+    Object.defineProperty(AbortSignal, "any", { configurable: true, value: undefined });
+    Object.defineProperty(AbortSignal, "timeout", { configurable: true, value: undefined });
+    try {
+      expect(AbortSignal.any).toBeUndefined();
+      expect(AbortSignal.timeout).toBeUndefined();
+      // Timeout still fires and is reported as a failed read (fail open).
+      await expect(fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", timeoutMs: 30, fetchImpl: hangingFetch }))
+        .resolves.toEqual({ status: "error" });
+      // The caller's abort is still forwarded.
+      const controller = new AbortController();
+      const pending = fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", signal: controller.signal, fetchImpl: hangingFetch });
+      controller.abort();
+      await expect(pending).resolves.toEqual({ status: "error" });
+      // And a normal read still succeeds.
+      const okFetch = (async () => new Response(JSON.stringify({ profile: null, suggestedNickname: "王大明", canSetNickname: true }))) as unknown as typeof fetch;
+      await expect(fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", fetchImpl: okFetch }))
+        .resolves.toEqual({ status: "ready", profile: null, suggestedNickname: "王大明" });
+    } finally {
+      if (any) Object.defineProperty(AbortSignal, "any", any);
+      if (timeout) Object.defineProperty(AbortSignal, "timeout", timeout);
+    }
+  });
+
+  it("turns a fetch that throws synchronously into an error, never a stuck read", async () => {
+    const throwing = (() => { throw new TypeError("not supported"); }) as unknown as typeof fetch;
+    await expect(fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", fetchImpl: throwing })).resolves.toEqual({ status: "error" });
+  });
+
+  it("clears its timer once the read ends", async () => {
+    const controller = new AbortController();
+    const { signal, dispose } = abortAfter(10_000, controller.signal);
+    dispose();
+    controller.abort();
+    // Disposed: the caller's later abort is no longer forwarded.
+    expect(signal.aborted).toBe(false);
+  });
+
+  it("reports a blacklisted viewer as unavailable: no gate, playback admitted, read-only chat", async () => {
+    const blockedFetch = (async () => new Response(JSON.stringify({ profile: null, suggestedNickname: null, canSetNickname: false, reason: "unavailable" }))) as unknown as typeof fetch;
+    const result = await fetchLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", fetchImpl: blockedFetch });
+    expect(result).toEqual({ status: "unavailable" });
+    expect(liveViewerProfileGateRequired({ enabled: true, runtimeState: "playing", status: result.status, hasProfile: false })).toBe(false);
+    expect(liveViewerProfileRequiredForChat({ enabled: true, status: result.status })).toBe(false);
+  });
+
+  it("closes the nickname step when a save is refused by the blacklist, and shows other refusals", () => {
+    expect(liveViewerProfileSaveOutcome(403, { error: "blocked", message: "目前無法設定暱稱" })).toEqual({ kind: "unavailable" });
+    expect(liveViewerProfileSaveOutcome(403, { error: "access_denied", message: "直播連線已失效，請重新進入直播間" }))
+      .toEqual({ kind: "failed", message: "直播連線已失效，請重新進入直播間" });
+    expect(liveViewerProfileSaveOutcome(409, { error: "nickname_taken", message: "這個名稱已經有人使用，請換一個" }))
+      .toEqual({ kind: "failed", message: "這個名稱已經有人使用，請換一個" });
+    expect(liveViewerProfileSaveOutcome(429, null)).toEqual({ kind: "failed", message: "操作太頻繁，請稍後再試" });
+    const url = interactionRoleAvatarUrl("host-blue");
+    expect(liveViewerProfileSaveOutcome(200, { profile: { nickname: "小明", avatarSeed: "host-blue", avatarUrl: url } }))
+      .toEqual({ kind: "saved", profile: { nickname: "小明", avatarSeed: "host-blue", avatarUrl: url } });
+    expect(liveViewerProfileSaveOutcome(200, { profile: { nickname: "小明", avatarSeed: "x", avatarUrl: "https://evil.example/a.png" } }))
+      .toEqual({ kind: "failed", message: "暫時無法儲存，請稍後再試" });
   });
 
   it("stops when the caller aborts", async () => {

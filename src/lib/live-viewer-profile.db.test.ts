@@ -77,7 +77,7 @@ describe("LiveViewerProfile on PostgreSQL", () => {
     // A later visit has a new admission session but the same profile cookie.
     const laterAdmission = await admit(vendor.id, live.id);
     await expect(readLiveViewerProfile(db, { ...scope, admissionToken: laterAdmission, profileToken, now: NOW }))
-      .resolves.toEqual({ profile: { nickname: "小明", avatarSeed: "care-teal", avatarUrl: interactionRoleAvatarUrl("care-teal") }, previousNickname: null });
+      .resolves.toEqual({ scope, profile: { nickname: "小明", avatarSeed: "care-teal", avatarUrl: interactionRoleAvatarUrl("care-teal") }, previousNickname: null });
 
     const renamed = await save(scope, laterAdmission, profileToken, "小明 2", "chat-mint");
     expect(renamed.issuedProfileToken).toBeNull();
@@ -342,12 +342,13 @@ describe("LiveViewerProfile moderation, limits and retention on PostgreSQL", () 
     const rows = await db.liveViewerProfile.findMany({ where: { liveId: live.id }, orderBy: { createdAt: "asc" } });
     expect(rows.map((row) => row.normalizedNickname).sort()).toEqual(["小雨", null].sort());
 
-    // The idle viewer's old message no longer shows the nickname, and its
-    // next visit is asked again with the old name suggested.
+    // The idle viewer's old message no longer shows the nickname and never
+    // turns into the registration name; its next visit is asked again with
+    // the old name suggested.
     const listed = await listViewerChatMessages(db, { ...scope, chatSessionToken: null, admissionToken: await admit(vendor.id, live.id), now: NOW });
-    expect(listed.messages.map((message) => message.actor)).toEqual([{ name: "老觀眾" }]);
+    expect(listed.messages.map((message) => message.actor)).toEqual([{ name: "觀眾" }]);
     await expect(readLiveViewerProfile(db, { ...scope, admissionToken: await admit(vendor.id, live.id), profileToken: oldToken, now: NOW }))
-      .resolves.toEqual({ profile: null, previousNickname: "小雨" });
+      .resolves.toEqual({ scope, profile: null, previousNickname: "小雨" });
     // Posting with the released profile uses the registration name.
     const reposted = await post(scope, { chatSessionToken: old.chatSessionToken, admissionToken: oldAdmission, profileToken: oldToken, body: "我回來了" });
     expect(reposted.message.actor).toEqual({ name: "老觀眾" });
@@ -382,6 +383,38 @@ describe("LiveViewerProfile moderation, limits and retention on PostgreSQL", () 
     // A live that has not ended keeps its profiles.
     expect(await db.liveViewerProfile.count({ where: { liveId: ongoing.live.id } })).toBe(1);
     const message = await db.liveChatMessage.findUniqueOrThrow({ where: { id: posted.message.id } });
-    expect(message).toMatchObject({ viewerProfileId: null, authorName: "回放觀眾" });
+    expect(message).toMatchObject({ viewerProfileId: null, viewerProfileRemovedAt: later, authorName: "回放觀眾" });
+    // The room shows "觀眾", not the registration name, for that message,
+    // and its author name is not held as a present name either.
+    const listed = await listViewerChatMessages(db, { ...scope, chatSessionToken: null, admissionToken: await admit(vendor.id, live.id), now: NOW });
+    expect(listed.messages.map((m) => m.actor)).toEqual([{ name: "觀眾" }]);
+    await expect(save(scope, await admit(vendor.id, live.id), null, "回放觀眾")).resolves.toBeTruthy();
+  });
+
+  it("settles a finished VOD's end from the runtime rules before the purge", async () => {
+    const { vendor, live } = await vendorWithLive("retention-vod");
+    const scope = { vendorId: vendor.id, liveId: live.id };
+    await save(scope, await admit(vendor.id, live.id), null, "看完了");
+    const video = await db.video.create({ data: { vendorId: vendor.id, title: "vod", videoUrl: "https://video.example.test/a.mp4", sourceType: "url", status: "ready", durationSec: 600 } });
+    // Scheduled VOD that finished long ago; nobody loaded it afterwards, so endedAt was never written.
+    await db.live.update({ where: { id: live.id }, data: { videoId: video.id, streamMode: "vod", status: "scheduled", scheduledAt: NOW, endedAt: null, replayEnabled: false } });
+
+    const later = new Date(NOW.getTime() + 40 * 86_400_000);
+    await purgeExpiredData(db, { now: later, policy: dataRetentionPolicy({}) });
+    const settled = await db.live.findUniqueOrThrow({ where: { id: live.id } });
+    expect(settled).toMatchObject({ status: "ended", endedAt: new Date(NOW.getTime() + 600_000) });
+    expect(await db.liveViewerProfile.count({ where: { liveId: live.id } })).toBe(0);
+  });
+
+  it("deletes an evergreen live's profiles only after 180 idle days", async () => {
+    const { vendor, live } = await vendorWithLive("retention-evergreen");
+    const scope = { vendorId: vendor.id, liveId: live.id };
+    await db.live.update({ where: { id: live.id }, data: { isEvergreen: true } });
+    await save(scope, await admit(vendor.id, live.id), null, "常青觀眾");
+
+    await purgeExpiredData(db, { now: new Date(NOW.getTime() + 179 * 86_400_000), policy: dataRetentionPolicy({}) });
+    expect(await db.liveViewerProfile.count({ where: { liveId: live.id } })).toBe(1);
+    await purgeExpiredData(db, { now: new Date(NOW.getTime() + 181 * 86_400_000), policy: dataRetentionPolicy({}) });
+    expect(await db.liveViewerProfile.count({ where: { liveId: live.id } })).toBe(0);
   });
 });

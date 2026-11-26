@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { reconcileLiveRuntimeState, type LiveRuntimeDatabase } from "@/lib/live-runtime-state";
 
 /**
  * F-070 / B04-17: bounded retention sweep for operational data that has no
@@ -11,13 +12,15 @@ import { Prisma, type PrismaClient } from "@prisma/client";
  * - AnalyticsEvent: rows older than the window are deleted (their
  *   TrackingDelivery logs cascade).
  * - AuditLog: the IP address is cleared; the audit entry itself is kept.
- * - LiveViewerProfile (viewer nicknames): deleted 30 days after the live
- *   ended and its replay closed, once the profile itself has been idle that
- *   long. Chat messages keep their row and fall back to the registration
- *   name (their viewerProfileId is cleared in the same statement). Evergreen
- *   lives never end, so their profiles stay; idle ones only release their
- *   name after 7 days (src/lib/live-viewer-profile.ts). TODO: decide a
- *   retention for evergreen profiles with the owner.
+ * - LiveViewerProfile (viewer nicknames): deleted once the profile has been
+ *   idle for 30 days and its live ended and closed its replay more than 30
+ *   days ago, or once it has been idle for 180 days whatever the live (an
+ *   evergreen live never ends). Before that, VOD lives with no persisted end
+ *   are reconciled with the shared runtime rules (live-runtime-state.ts), so
+ *   the end is not missed just because nobody opened the page afterwards.
+ *   The same statement clears the messages' viewerProfileId and stamps
+ *   viewerProfileRemovedAt, so the room shows "觀眾" for them, never the
+ *   registration name; the message rows themselves stay.
  *
  * The windows are provisional defaults (180 / 365 / 365 days) until the owner
  * fixes them on legal advice; each can be overridden by an environment
@@ -38,6 +41,10 @@ export const DATA_RETENTION_DEFAULT_DAYS = {
 
 /** Days after a live ended (and its replay closed) before its viewer nicknames are deleted. */
 export const LIVE_VIEWER_PROFILE_RETENTION_DAYS = 30;
+/** Idle days after which a nickname is deleted whatever its live (evergreen never ends). */
+export const LIVE_VIEWER_PROFILE_IDLE_DAYS = 180;
+/** Lives reconciled per sweep before the nickname purge. */
+const LIVE_RECONCILE_LIMIT = 200;
 
 const MIN_DAYS = 30;
 const MAX_DAYS = 3650;
@@ -99,7 +106,7 @@ async function drain(step: () => Promise<number>, batchSize: number, maxBatches:
 }
 
 /** Accepts a client or an interactive transaction; only raw statements are used. */
-type RawExecutor = Pick<PrismaClient, "$executeRaw">;
+type RawExecutor = Pick<PrismaClient, "$executeRaw" | "$queryRaw"> & LiveRuntimeDatabase;
 
 export async function purgeExpiredData(
   db: RawExecutor,
@@ -150,23 +157,40 @@ export async function purgeExpiredData(
         LIMIT ${batchSize}
      )`, batchSize, maxBatches);
 
-  // Fixed window (not configurable): nicknames have no use after the room closed.
+  // Fixed windows (not configurable): nicknames have no use after the room closed.
   const profileCutoff = cutoff(LIVE_VIEWER_PROFILE_RETENTION_DAYS);
+  const idleCutoff = cutoff(LIVE_VIEWER_PROFILE_IDLE_DAYS);
+  // A scheduled VOD only gets its persisted end when someone loads it after
+  // it finished; settle that from the shared runtime rules first.
+  const unsettled = await db.$queryRaw<Array<{ vendorId: string; liveId: string }>>`
+    SELECT DISTINCT "live"."vendorId", "live"."id" AS "liveId"
+      FROM "LiveViewerProfile" "profile"
+      JOIN "Live" "live" ON "live"."vendorId" = "profile"."vendorId" AND "live"."id" = "profile"."liveId"
+     WHERE "profile"."lastActiveAt" < ${profileCutoff}
+       AND "live"."endedAt" IS NULL
+       AND "live"."streamMode" = 'vod'
+       AND "live"."isEvergreen" = false
+     LIMIT ${LIVE_RECONCILE_LIMIT}`;
+  for (const live of unsettled) {
+    await reconcileLiveRuntimeState(db, { vendorId: live.vendorId, liveId: live.liveId, now });
+  }
   const profiles = await drain(() => db.$executeRaw`
     WITH "doomed" AS (
       SELECT "profile"."id"
         FROM "LiveViewerProfile" "profile"
         JOIN "Live" "live" ON "live"."vendorId" = "profile"."vendorId" AND "live"."id" = "profile"."liveId"
-       WHERE "profile"."lastActiveAt" < ${profileCutoff}
-         AND "live"."endedAt" IS NOT NULL
-         AND "live"."endedAt" < ${profileCutoff}
-         AND ("live"."replayEnabled" = false
-              OR ("live"."replayAvailableUntil" IS NOT NULL AND "live"."replayAvailableUntil" < ${profileCutoff}))
+       WHERE "profile"."lastActiveAt" < ${idleCutoff}
+          OR ("profile"."lastActiveAt" < ${profileCutoff}
+              AND "live"."endedAt" IS NOT NULL
+              AND "live"."endedAt" < ${profileCutoff}
+              AND ("live"."replayEnabled" = false
+                   OR ("live"."replayAvailableUntil" IS NOT NULL AND "live"."replayAvailableUntil" < ${profileCutoff})))
        ORDER BY "profile"."id"
        LIMIT ${batchSize}
     ), "detached" AS (
       UPDATE "LiveChatMessage"
-         SET "viewerProfileId" = NULL
+         SET "viewerProfileId" = NULL,
+             "viewerProfileRemovedAt" = ${now}
        WHERE "viewerProfileId" IN (SELECT "id" FROM "doomed")
     )
     DELETE FROM "LiveViewerProfile"

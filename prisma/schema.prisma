@@ -1450,6 +1450,9 @@ model LiveChatMessage {
   /// 觀眾留言時的暱稱 profile；聊天室顯示它目前的暱稱與頭像。authorName
   /// 仍是報名姓名快照（商家後台與匯出不變）。
   viewerProfileId  String?
+  /// 這則留言的暱稱 profile 已被保留期清理刪除的時間；有值時聊天室顯示「觀眾」，
+  /// 不退回報名姓名。
+  viewerProfileRemovedAt DateTime?
   authorName       String
   body             String
   source           String   @default("viewer")

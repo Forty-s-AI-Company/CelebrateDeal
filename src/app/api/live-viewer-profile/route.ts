@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
-import { chatSessionTokenFromRequest, resolveViewerProfileModeration, resolveViewerRegistrationName } from "@/lib/live-chat";
+import { chatSessionTokenFromRequest, resolveViewerProfileModeration } from "@/lib/live-chat";
 import { liveChatIpTrustConfig } from "@/lib/live-chat-request-security";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { liveViewerPassRateLimitIdentity } from "@/lib/live-viewer-pass";
@@ -34,6 +34,9 @@ const READ_IP_LIMIT = 600;
 const WRITE_IP_LIMIT = 300;
 /** Per viewer (verified pass) each minute. */
 const WRITE_VIEWER_LIMIT = 10;
+/** New profiles per source IP and live each hour (on top of 3 per admission session). */
+const CREATE_IP_LIVE_LIMIT = 10;
+const CREATE_IP_LIVE_WINDOW_MS = 60 * 60 * 1_000;
 
 const ERROR_STATUS: Record<LiveViewerProfileError["code"], number> = {
   access_denied: 403,
@@ -92,12 +95,26 @@ export async function GET(request: Request) {
     const admissionToken = liveViewerTokenFromRequest(request);
     if (!admissionToken) throw new LiveViewerProfileError("access_denied");
     const result = await readLiveViewerProfile(db, { ...query, admissionToken, profileToken: liveViewerProfileTokenFromRequest(request) });
+    // Everything below uses the admission session's scope, not the query.
+    const moderation = await resolveViewerProfileModeration(db, {
+      ...result.scope,
+      admissionToken,
+      chatSessionToken: chatSessionTokenFromRequest(request),
+      ipAddress: getRequestClientIp(request, liveChatIpTrustConfig()),
+    });
+    // A blacklisted viewer still watches (the blacklist only ever limited
+    // chat): no nickname step, read-only chat. The reason never says which
+    // rule matched.
+    if (moderation.identityBlocked) {
+      return json({ profile: null, suggestedNickname: null, canSetNickname: false, reason: "unavailable" });
+    }
     // A released nickname is offered again; otherwise the caller's own
     // verified registration name. Never another viewer's.
-    const registrationName = result.profile || result.previousNickname
-      ? null
-      : await resolveViewerRegistrationName(db, { ...query, chatSessionToken: chatSessionTokenFromRequest(request) }, { admissionToken });
-    return json({ profile: result.profile, suggestedNickname: suggestLiveViewerNickname(result.previousNickname ?? registrationName) });
+    return json({
+      profile: result.profile,
+      suggestedNickname: result.profile ? null : suggestLiveViewerNickname(result.previousNickname ?? moderation.ownRegistrationName ?? null),
+      canSetNickname: true,
+    });
   } catch (error) {
     return errorResponse(error);
   }
@@ -140,6 +157,13 @@ export async function PUT(request: Request) {
         chatSessionToken,
         ipAddress,
       }),
+      // Checked only when a new profile would be created.
+      limitNewProfile: async (scope) => Boolean(await checkRateLimit(
+        request,
+        `live-viewer-profile-create:${scope.liveId}`,
+        CREATE_IP_LIVE_LIMIT,
+        CREATE_IP_LIVE_WINDOW_MS,
+      )),
     });
     const response = json({ profile: result.profile });
     if (result.issuedProfileToken) {

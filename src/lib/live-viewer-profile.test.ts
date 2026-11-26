@@ -154,9 +154,7 @@ function fakeDatabase(options: {
         ? { vendor: { name: "幸福烘焙" }, interactionScript: { vendorId: "vendor-1", events: [{ role: { name: "小助理 Amy" } }, { role: null }] } }
         : options.live),
     },
-    liveChatMessage: {
-      findMany: vi.fn(async () => options.authors ?? []),
-    },
+    $queryRaw: vi.fn<(...query: unknown[]) => Promise<Array<{ authorName: string }>>>(async () => options.authors ?? []),
     liveViewerProfile: {
       findUnique: vi.fn(async () => options.profile ?? null),
       count: vi.fn(async () => options.createdBySession ?? 0),
@@ -264,7 +262,7 @@ describe("readLiveViewerProfile", () => {
     const idle = new Date(NOW.getTime() - 2 * 60 * 60 * 1_000);
     const database = fakeDatabase({ profile: { id: "profile-1", nickname: "小明", avatarSeed: "care-teal", normalizedNickname: "小明", lastActiveAt: idle } });
     await expect(readLiveViewerProfile(database as never, { ...saveInput, profileToken: PROFILE }))
-      .resolves.toEqual({ profile: { nickname: "小明", avatarSeed: "care-teal", avatarUrl: interactionRoleAvatarUrl("care-teal") }, previousNickname: null });
+      .resolves.toEqual({ scope: { vendorId: "vendor-1", liveId: "live-1" }, profile: { nickname: "小明", avatarSeed: "care-teal", avatarUrl: interactionRoleAvatarUrl("care-teal") }, previousNickname: null });
     expect(database.liveViewerProfile.findUnique).toHaveBeenCalledWith(expect.objectContaining({
       where: { vendorId_liveId_viewerKeyHash: { vendorId: "vendor-1", liveId: "live-1", viewerKeyHash: hashLiveViewerProfileKey(PROFILE, "live-1") } },
     }));
@@ -273,7 +271,7 @@ describe("readLiveViewerProfile", () => {
       data: { lastActiveAt: NOW },
     });
     const noCookie = fakeDatabase();
-    await expect(readLiveViewerProfile(noCookie as never, saveInput)).resolves.toEqual({ profile: null, previousNickname: null });
+    await expect(readLiveViewerProfile(noCookie as never, saveInput)).resolves.toEqual({ scope: { vendorId: "vendor-1", liveId: "live-1" }, profile: null, previousNickname: null });
     expect(noCookie.liveViewerProfile.findUnique).not.toHaveBeenCalled();
   });
 
@@ -286,7 +284,7 @@ describe("readLiveViewerProfile", () => {
   it("treats a released profile as none and offers its old name again", async () => {
     const database = fakeDatabase({ profile: { ...ACTIVE_ROW, normalizedNickname: null } });
     await expect(readLiveViewerProfile(database as never, { ...saveInput, profileToken: PROFILE }))
-      .resolves.toEqual({ profile: null, previousNickname: "小明" });
+      .resolves.toEqual({ scope: { vendorId: "vendor-1", liveId: "live-1" }, profile: null, previousNickname: "小明" });
   });
 });
 
@@ -311,27 +309,41 @@ describe("saveLiveViewerProfile moderation and limits", () => {
     expect(database.liveViewerProfile.upsert).not.toHaveBeenCalled();
   });
 
-  it("reserves recent chat authors without a nickname, except the caller's own registration", async () => {
+  it("reserves recent chat authors still shown by registration name, except the caller's own", async () => {
     const database = fakeDatabase({ authors: [{ authorName: "王 大明" }] });
     await expect(saveLiveViewerProfile(database as never, { ...saveInput, nickname: "王大明", moderate: allowAll }))
       .rejects.toMatchObject({ code: "nickname_taken" });
-    const query = database.liveChatMessage.findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown> }];
-    expect(query[0].where).toMatchObject({
-      vendorId: "vendor-1",
-      liveId: "live-1",
-      source: "viewer",
-      viewerProfileId: null,
-      createdAt: { gte: new Date(NOW.getTime() - LIVE_VIEWER_NICKNAME_HOLD_MS) },
-    });
-    expect(query[0].where).not.toHaveProperty("NOT");
+    const [strings, ...values] = database.$queryRaw.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
+    const sql = strings.join("?");
+    expect(sql).toMatch(/SELECT DISTINCT "authorName"/u);
+    expect(sql).toMatch(/"viewerProfileId" IS NULL/u);
+    expect(sql).toMatch(/"viewerProfileRemovedAt" IS NULL/u);
+    expect(sql).toMatch(/LIMIT \?$/u);
+    expect(values).toEqual(expect.arrayContaining(["vendor-1", "live-1", new Date(NOW.getTime() - LIVE_VIEWER_NICKNAME_HOLD_MS), 5_000]));
+    expect(JSON.stringify(values)).not.toContain("formSubmissionId");
 
     const own = fakeDatabase();
     await saveLiveViewerProfile(own as never, {
       ...saveInput,
       moderate: async () => ({ identityBlocked: false, isNicknameBlocked: () => false, ownSubmissionId: "submission-1" }),
     });
-    const ownQuery = own.liveChatMessage.findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown> }];
-    expect(ownQuery[0].where).toMatchObject({ NOT: { formSubmissionId: "submission-1" } });
+    const [, ...ownValues] = own.$queryRaw.mock.calls[0] as unknown as [TemplateStringsArray, ...Array<{ strings?: string[]; values?: unknown[] }>];
+    const ownFilter = ownValues.find((value) => Array.isArray(value?.strings));
+    expect(ownFilter?.strings?.join("?")).toContain('"formSubmissionId" <> ?');
+    expect(ownFilter?.values).toEqual(["submission-1"]);
+  });
+
+  it("asks the per-IP-and-live limit only when a new profile would be created", async () => {
+    const limited = fakeDatabase();
+    const limitNewProfile = vi.fn(async () => true);
+    await expect(saveLiveViewerProfile(limited as never, { ...saveInput, limitNewProfile })).rejects.toMatchObject({ code: "too_many_profiles" });
+    expect(limitNewProfile).toHaveBeenCalledWith({ vendorId: "vendor-1", liveId: "live-1" });
+    expect(limited.liveViewerProfile.upsert).not.toHaveBeenCalled();
+
+    const renaming = fakeDatabase({ profile: { id: "profile-1" } });
+    const notAsked = vi.fn(async () => true);
+    await expect(saveLiveViewerProfile(renaming as never, { ...saveInput, profileToken: PROFILE, limitNewProfile: notAsked })).resolves.toBeTruthy();
+    expect(notAsked).not.toHaveBeenCalled();
   });
 
   it("allows at most three new profiles per admission session", async () => {

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { INTERACTION_AVATAR_SEEDS, interactionRoleAvatarUrl } from "@/lib/interaction-role";
 import { hashLiveViewerToken } from "@/lib/live-quota-admission";
@@ -35,7 +35,7 @@ export const LIVE_VIEWER_NICKNAME_HOLD_MS = 7 * 24 * 60 * 60 * 1_000;
 export const LIVE_VIEWER_PROFILES_PER_ADMISSION = 3;
 /** lastActiveAt is refreshed at most this often. */
 const ACTIVITY_REFRESH_MS = 60 * 60 * 1_000;
-/** Recent chat authors without a nickname read for the reserved names. */
+/** Distinct recent chat author names read for the reserved names. */
 const RECENT_AUTHOR_SCAN_LIMIT = 5_000;
 const PROFILE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 const ADMISSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
@@ -236,7 +236,7 @@ function toView(row: Pick<ProfileRow, "nickname" | "avatarSeed"> | null): LiveVi
   return avatarUrl ? { nickname: row.nickname, avatarSeed: row.avatarSeed, avatarUrl } : null;
 }
 
-type ProfileModels = Pick<PrismaClient, "liveViewerSession" | "liveViewerProfile" | "live" | "liveChatMessage">;
+type ProfileModels = Pick<PrismaClient, "liveViewerSession" | "liveViewerProfile" | "live" | "$queryRaw">;
 
 /**
  * The (vendorId, liveId) of the caller's active admission, read from the
@@ -315,7 +315,7 @@ export async function touchLiveViewerProfile(
  * script, roles and messages count.
  */
 export async function reservedLiveViewerNicknameKeys(
-  database: Pick<PrismaClient, "live" | "liveChatMessage">,
+  database: Pick<PrismaClient, "live" | "$queryRaw">,
   scope: { vendorId: string; liveId: string },
   options: { now?: Date; ownSubmissionId?: string | null } = {},
 ) {
@@ -336,20 +336,24 @@ export async function reservedLiveViewerNicknameKeys(
     },
   });
   if (!live) throw new LiveViewerProfileError("access_denied");
-  const authors = await database.liveChatMessage.findMany({
-    where: {
-      vendorId: scope.vendorId,
-      liveId: scope.liveId,
-      source: "viewer",
-      viewerProfileId: null,
-      createdAt: { gte: new Date(now.getTime() - LIVE_VIEWER_NICKNAME_HOLD_MS) },
-      ...(options.ownSubmissionId ? { NOT: { formSubmissionId: options.ownSubmissionId } } : {}),
-    },
-    distinct: ["authorName"],
-    select: { authorName: true },
-    orderBy: [{ authorName: "asc" }],
-    take: RECENT_AUTHOR_SCAN_LIMIT,
-  });
+  // Only rows that still show their registration name count: a message whose
+  // profile was released keeps viewerProfileId, and one whose profile was
+  // deleted carries viewerProfileRemovedAt; both show "觀眾" instead.
+  const since = new Date(now.getTime() - LIVE_VIEWER_NICKNAME_HOLD_MS);
+  const ownSubmission = options.ownSubmissionId
+    ? Prisma.sql`AND ("formSubmissionId" IS NULL OR "formSubmissionId" <> ${options.ownSubmissionId})`
+    : Prisma.empty;
+  const authors = await database.$queryRaw<Array<{ authorName: string }>>`
+    SELECT DISTINCT "authorName"
+      FROM "LiveChatMessage"
+     WHERE "vendorId" = ${scope.vendorId}
+       AND "liveId" = ${scope.liveId}
+       AND "source" = 'viewer'
+       AND "viewerProfileId" IS NULL
+       AND "viewerProfileRemovedAt" IS NULL
+       AND "createdAt" >= ${since}
+       ${ownSubmission}
+     LIMIT ${RECENT_AUTHOR_SCAN_LIMIT}`;
   const names = [
     ...RESERVED_NICKNAMES,
     live.vendor.name,
@@ -372,9 +376,13 @@ export type LiveViewerProfileModeration = {
   isNicknameBlocked: (nickname: string) => boolean;
   /** The caller's own verified registration, if any. */
   ownSubmissionId: string | null;
+  /** That registration's name (the nickname suggestion), if any. */
+  ownRegistrationName?: string | null;
 };
 
 export type ReadLiveViewerProfileResult = {
+  /** The admission session's vendor and live; reuse it instead of client ids. */
+  scope: { vendorId: string; liveId: string };
   profile: LiveViewerProfileView | null;
   /** A released profile's old name, offered again as the suggestion. */
   previousNickname: string | null;
@@ -386,11 +394,12 @@ export async function readLiveViewerProfile(
 ): Promise<ReadLiveViewerProfileResult> {
   const now = input.now ?? new Date();
   const scope = await resolveLiveViewerProfileScope(database, { ...input, now });
+  const serverScope = { vendorId: scope.vendorId, liveId: scope.liveId };
   const row = await findLiveViewerProfile(database, scope, input.profileToken);
-  if (!row) return { profile: null, previousNickname: null };
-  if (row.normalizedNickname === null) return { profile: null, previousNickname: row.nickname };
+  if (!row) return { scope: serverScope, profile: null, previousNickname: null };
+  if (row.normalizedNickname === null) return { scope: serverScope, profile: null, previousNickname: row.nickname };
   await touchLiveViewerProfile(database, row, now);
-  return { profile: toView(row), previousNickname: null };
+  return { scope: serverScope, profile: toView(row), previousNickname: null };
 }
 
 function isUniqueViolation(error: unknown) {
@@ -419,11 +428,12 @@ async function assertProfileCreationAllowed(
     where: { vendorId_liveId_viewerKeyHash: { vendorId: scope.vendorId, liveId: scope.liveId, viewerKeyHash } },
     select: { id: true },
   });
-  if (existing) return;
+  if (existing) return false;
   const created = await database.liveViewerProfile.count({
     where: { vendorId: scope.vendorId, liveId: scope.liveId, createdBySessionHash: scope.admissionTokenHash },
   });
   if (created >= LIVE_VIEWER_PROFILES_PER_ADMISSION) throw new LiveViewerProfileError("too_many_profiles");
+  return true;
 }
 
 /**
@@ -444,6 +454,8 @@ export async function saveLiveViewerProfile(
     avatarSeed?: string | null;
     avatarUrl?: string | null;
     moderate?: (scope: { vendorId: string; liveId: string }) => Promise<LiveViewerProfileModeration>;
+    /** Extra limit on new profiles (per IP and live); true = refused. */
+    limitNewProfile?: (scope: { vendorId: string; liveId: string }) => Promise<boolean>;
     now?: Date;
   },
 ): Promise<SaveLiveViewerProfileResult> {
@@ -466,7 +478,10 @@ export async function saveLiveViewerProfile(
   const profileToken = isLiveViewerProfileToken(input.profileToken) ? input.profileToken : createLiveViewerProfileToken();
   const issuedProfileToken = profileToken === input.profileToken ? null : profileToken;
   const viewerKeyHash = hashLiveViewerProfileKey(profileToken, scope.liveId);
-  await assertProfileCreationAllowed(database, scope, viewerKeyHash);
+  const creating = await assertProfileCreationAllowed(database, scope, viewerKeyHash);
+  if (creating && input.limitNewProfile && await input.limitNewProfile({ vendorId: scope.vendorId, liveId: scope.liveId })) {
+    throw new LiveViewerProfileError("too_many_profiles");
+  }
 
   // An idle holder (7 days) of this name gives it up; its row stays but is
   // no longer shown or reserved. Active holders are left for the unique index.

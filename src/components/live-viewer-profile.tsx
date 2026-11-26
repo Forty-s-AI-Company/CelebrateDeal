@@ -23,7 +23,11 @@ export type LiveViewerProfile = {
   avatarUrl: string;
 };
 
-export type LiveViewerProfileStatus = "idle" | "loading" | "ready" | "error";
+/**
+ * `unavailable`: the vendor's blacklist covers this viewer. They still watch;
+ * there is no nickname step and the chat stays read-only.
+ */
+export type LiveViewerProfileStatus = "idle" | "loading" | "ready" | "error" | "unavailable";
 
 export type LiveViewerProfileSaveResult = { ok: true } | { ok: false; message: string };
 
@@ -51,13 +55,14 @@ export function liveViewerProfileGateRequired(input: {
   status: LiveViewerProfileStatus;
   hasProfile: boolean;
 }) {
-  if (!input.enabled || input.runtimeState !== "playing" || input.status === "error") return false;
+  if (!input.enabled || input.runtimeState !== "playing") return false;
+  if (input.status === "error" || input.status === "unavailable") return false;
   return !input.hasProfile;
 }
 
 /** Posting asks for a nickname whenever the room uses them and the read worked. */
 export function liveViewerProfileRequiredForChat(input: { enabled: boolean; status: LiveViewerProfileStatus }) {
-  return input.enabled && input.status !== "error";
+  return input.enabled && input.status !== "error" && input.status !== "unavailable";
 }
 
 /** A slow profile read must not hold the room: after this it counts as failed (fail open). */
@@ -65,7 +70,29 @@ export const LIVE_VIEWER_PROFILE_READ_TIMEOUT_MS = 6_000;
 
 export type LiveViewerProfileReadResult =
   | { status: "ready"; profile: LiveViewerProfile | null; suggestedNickname: string | null }
+  | { status: "unavailable" }
   | { status: "error" };
+
+/**
+ * An abort signal that fires on the caller's abort or after `timeoutMs`.
+ * Built from AbortController + setTimeout only: AbortSignal.any and
+ * AbortSignal.timeout are missing in Safari < 17.4 / 16.x, Chrome < 116 and
+ * Firefox < 124, which Next still supports.
+ */
+export function abortAfter(timeoutMs: number, external?: AbortSignal) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const forward = () => controller.abort();
+  if (external?.aborted) controller.abort();
+  else external?.addEventListener("abort", forward, { once: true });
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      clearTimeout(timer);
+      external?.removeEventListener("abort", forward);
+    },
+  };
+}
 
 /**
  * Reads the viewer's profile. Any failure, an abort or the timeout returns
@@ -78,21 +105,54 @@ export async function fetchLiveViewerProfile(input: {
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }): Promise<LiveViewerProfileReadResult> {
-  const query = new URLSearchParams({ vendorId: input.vendorId, liveId: input.liveId });
-  const timeout = AbortSignal.timeout(input.timeoutMs ?? LIVE_VIEWER_PROFILE_READ_TIMEOUT_MS);
-  const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
+  let abort: ReturnType<typeof abortAfter> | null = null;
   try {
-    const response = await (input.fetchImpl ?? fetch)(`${LIVE_VIEWER_PROFILE_ENDPOINT}?${query.toString()}`, { headers: CLIENT_HEADERS, signal });
+    abort = abortAfter(input.timeoutMs ?? LIVE_VIEWER_PROFILE_READ_TIMEOUT_MS, input.signal);
+    const query = new URLSearchParams({ vendorId: input.vendorId, liveId: input.liveId });
+    const response = await (input.fetchImpl ?? fetch)(`${LIVE_VIEWER_PROFILE_ENDPOINT}?${query.toString()}`, { headers: CLIENT_HEADERS, signal: abort.signal });
     if (!response.ok) return { status: "error" };
     const payload: unknown = await response.json();
+    if (!isObject(payload)) return { status: "error" };
+    if (payload.canSetNickname === false) return { status: "unavailable" };
     return {
       status: "ready",
-      profile: isObject(payload) ? parseLiveViewerProfile(payload.profile) : null,
-      suggestedNickname: isObject(payload) && typeof payload.suggestedNickname === "string" ? payload.suggestedNickname : null,
+      profile: parseLiveViewerProfile(payload.profile),
+      suggestedNickname: typeof payload.suggestedNickname === "string" ? payload.suggestedNickname : null,
     };
   } catch {
     return { status: "error" };
+  } finally {
+    abort?.dispose();
   }
+}
+
+const SAVE_FAILED_MESSAGE = "暫時無法儲存，請稍後再試";
+
+/**
+ * What a nickname PUT means for the room. A 403 `blocked` (the vendor's
+ * blacklist) is not an error to show: the nickname step closes and the
+ * viewer keeps watching with a read-only chat.
+ */
+export function liveViewerProfileSaveOutcome(status: number, payload: unknown):
+  | { kind: "saved"; profile: LiveViewerProfile }
+  | { kind: "unavailable" }
+  | { kind: "failed"; message: string } {
+  if (status === 403 && isObject(payload) && payload.error === "blocked") return { kind: "unavailable" };
+  if (status < 200 || status >= 300) {
+    const message = isObject(payload) && typeof payload.message === "string" ? payload.message : null;
+    return { kind: "failed", message: message ?? (status === 429 ? "操作太頻繁，請稍後再試" : SAVE_FAILED_MESSAGE) };
+  }
+  const profile = isObject(payload) ? parseLiveViewerProfile(payload.profile) : null;
+  return profile ? { kind: "saved", profile } : { kind: "failed", message: SAVE_FAILED_MESSAGE };
+}
+
+function emptyProfileState(scope: string, status: LiveViewerProfileStatus): ProfileState {
+  return { scope, status, profile: null, suggestedNickname: null };
+}
+
+/** Keeps a profile already read when a later read fails; otherwise fails open. */
+function failedReadState(scope: string) {
+  return (previous: ProfileState) => previous.scope === scope && previous.status === "ready" ? previous : emptyProfileState(scope, "error");
 }
 
 type ProfileState = {
@@ -112,17 +172,19 @@ export function useLiveViewerProfile({ vendorId, liveId, enabled }: { vendorId: 
     let disposed = false;
     const controller = new AbortController();
     queueMicrotask(() => {
-      if (!disposed) setState((previous) => previous.scope === scope && previous.status === "ready" ? previous : { scope, status: "loading", profile: null, suggestedNickname: null });
+      if (!disposed) setState((previous) => previous.scope === scope && previous.status === "ready" ? previous : emptyProfileState(scope, "loading"));
     });
-    void fetchLiveViewerProfile({ vendorId, liveId, signal: controller.signal }).then((result) => {
-      if (disposed) return;
-      if (result.status === "error") {
-        // Keep a profile already read; otherwise fail open (watching is never blocked).
-        setState((previous) => previous.scope === scope && previous.status === "ready" ? previous : { scope, status: "error", profile: null, suggestedNickname: null });
-        return;
-      }
-      setState({ scope, status: "ready", profile: result.profile, suggestedNickname: result.suggestedNickname });
-    });
+    fetchLiveViewerProfile({ vendorId, liveId, signal: controller.signal })
+      .then((result) => {
+        if (disposed) return;
+        if (result.status === "error") return setState(failedReadState(scope));
+        if (result.status === "unavailable") return setState(emptyProfileState(scope, "unavailable"));
+        setState({ scope, status: "ready", profile: result.profile, suggestedNickname: result.suggestedNickname });
+      })
+      // Never leave the room waiting on a read that threw: fail open.
+      .catch(() => {
+        if (!disposed) setState(failedReadState(scope));
+      });
     return () => {
       disposed = true;
       controller.abort();
@@ -137,14 +199,12 @@ export function useLiveViewerProfile({ vendorId, liveId, enabled }: { vendorId: 
         headers: CLIENT_HEADERS,
         body: JSON.stringify({ vendorId, liveId, nickname, avatarSeed }),
       });
-      const payload: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message = isObject(payload) && typeof payload.message === "string" ? payload.message : null;
-        return { ok: false, message: message ?? (response.status === 429 ? "操作太頻繁，請稍後再試" : "暫時無法儲存，請稍後再試") };
-      }
-      const profile = isObject(payload) ? parseLiveViewerProfile(payload.profile) : null;
-      if (!profile) return { ok: false, message: "暫時無法儲存，請稍後再試" };
-      setState({ scope, status: "ready", profile, suggestedNickname: null });
+      const outcome = liveViewerProfileSaveOutcome(response.status, await response.json().catch(() => null));
+      if (outcome.kind === "failed") return { ok: false, message: outcome.message };
+      // Blacklisted: close the nickname step and keep watching, read-only chat.
+      setState(outcome.kind === "unavailable"
+        ? emptyProfileState(scope, "unavailable")
+        : { scope, status: "ready", profile: outcome.profile, suggestedNickname: null });
       return { ok: true };
     } catch {
       return { ok: false, message: "暫時無法儲存，請稍後再試" };
@@ -191,14 +251,15 @@ export function useLiveViewerProfileGate(input: {
     hasProfile: Boolean(viewerProfile.profile),
   });
   const playbackAdmissionStatus: AdmissionStatus = gateOpen ? "checking" : input.admissionStatus;
-  const chat = enabled
+  const nicknamesAvailable = enabled && viewerProfile.status !== "unavailable";
+  const chat = nicknamesAvailable
     ? {
         required: liveViewerProfileRequiredForChat({ enabled, status: viewerProfile.status }),
         profile: viewerProfile.profile,
         onEdit: () => setEditorOpen(true),
       }
     : undefined;
-  const dialog: ProfileDialogProps | null = enabled && (gateOpen || editorOpen)
+  const dialog: ProfileDialogProps | null = nicknamesAvailable && (gateOpen || editorOpen)
     ? {
         // A new mount per mode and once the read ends, so the form starts from current values.
         key: `${gateOpen ? "gate" : "edit"}:${viewerProfile.status}`,
