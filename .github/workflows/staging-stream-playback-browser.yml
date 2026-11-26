@@ -8,6 +8,11 @@ name: Staging Stream signed playback browser
 # 55-minute video is uploaded once and reused. It never starts a checkout, payment, refund,
 # form submission or email.
 #
+# Scenario manual (owner Safari / iPhone check): reuses the same binding, owner session and fixtures,
+# creates one replay Live whose replay stays available for manual_hours (default 48), plays nothing,
+# does not delete the Live, and prints one `stream_playback_manual=` line with the public live page
+# URL (a public viewer page; no token, cookie or signed URL). The WebKit job is skipped.
+#
 # The WebKit job is Playwright WebKit on macOS: evidence for that engine only. Safari is always
 # reported NOT_COVERED (Playwright WebKit is not Safari, and the app prefers hls.js wherever
 # MediaSource works) and needs a manual check on a real Safari / iPhone.
@@ -23,15 +28,21 @@ on:
         required: true
         type: string
       scenario:
-        description: full plays through the first renewal (~28 min); quick skips the renewal
+        description: full plays through the first renewal (~28 min); quick skips the renewal; manual only creates a long-lived replay Live for a manual Safari / iPhone check (no playback, never cleaned up)
         required: true
         default: full
         type: choice
         options:
           - full
           - quick
+          - manual
+      manual_hours:
+        description: manual scenario only - hours the replay stays available after creation (1-72)
+        required: false
+        default: "48"
+        type: string
       webkit:
-        description: Also run the Playwright WebKit evidence job on macOS (quick scenario)
+        description: Also run the Playwright WebKit evidence job on macOS (quick scenario; ignored for manual)
         required: true
         default: true
         type: boolean
@@ -57,6 +68,7 @@ jobs:
       CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
       CELEBRATEDEAL_STREAM_VIEWER_BROWSER: chromium
       CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: ${{ inputs.scenario }}
+      CELEBRATEDEAL_STREAM_MANUAL_HOURS: ${{ inputs.manual_hours }}
     steps:
       - name: Checkout protected Stream playback runner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -110,7 +122,7 @@ jobs:
 
   webkit:
     needs: chromium
-    if: ${{ always() && inputs.webkit && needs.chromium.result != 'skipped' && github.ref == 'refs/heads/master' && github.ref_protected }}
+    if: ${{ always() && inputs.webkit && inputs.scenario != 'manual' && needs.chromium.result != 'skipped' && github.ref == 'refs/heads/master' && github.ref_protected }}
     runs-on: macos-latest
     timeout-minutes: 45
     environment:

@@ -9,6 +9,7 @@ import {
   formatReceiptLines, receiptLeaks, redactStreamUrl, renewalDelaySeconds, replayDeadline,
   replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor, taipeiDateTimeLocal,
   describeErrorSample, formatRenewalErrorsLine, streamSegmentIdentity, summarizeStreamErrors,
+  formatManualLine, parseManualHours,
   validUploadUrl, withCorruptedSignature, assessNewTokenUse, createTokenAttribution, playlistReferences, shouldRefuseInRecovery,
 } from "./staging-stream-playback-browser-core.mjs";
 import { describeFailure, probeAllowedOrigins, RECOVERY_CASES, runStreamPlaybackBrowser, safeReceiptText } from "./staging-stream-playback-browser.mjs";
@@ -751,4 +752,103 @@ test("the renewal line reports the renewed token's use and leaks nothing", () =>
   const line = formatReceiptLines(receipt).split("\n").find((item) => item.startsWith("stream_playback_renewal="));
   assert.equal(line, "stream_playback_renewal=status:PASS after_s:1679 expected_s:1679 new_token_requests:9 new_token_playlists:1 new_token_segments:8 first_token_after_exp:0 renewed_exp_equals_deadline:true max_stall_s:0");
   assert.equal(receiptLeaks(JSON.stringify(receipt)), false);
+});
+
+const manualEnv = { ...env, CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: "manual" };
+
+test("manual: hours default to 48 and only whole hours 1-72 are accepted", () => {
+  assert.equal(parseManualHours(undefined), 48);
+  assert.equal(parseManualHours(""), 48);
+  assert.equal(parseManualHours("48"), 48);
+  assert.equal(parseManualHours(" 1 "), 1);
+  assert.equal(parseManualHours("72"), 72);
+  for (const bad of ["0", "73", "-1", "1.5", "abc", "100", "4e1", "0x10"]) assert.equal(parseManualHours(bad), null, bad);
+  assert.equal(replayDeadlineMinutes("manual", 48), 48 * 60);
+  assert.equal(replayDeadlineMinutes("manual", 72), 72 * 60);
+  assert.equal(replayDeadlineMinutes("manual"), 48 * 60);
+  assert.equal(replayDeadlineMinutes("full"), 58);
+  assert.equal(replayDeadlineMinutes("quick"), 20);
+  assert.equal(createReceipt(manualEnv).manualHours, 48);
+  assert.equal(createReceipt({ ...manualEnv, CELEBRATEDEAL_STREAM_MANUAL_HOURS: "6" }).fixture.replayDeadlineMinutes, 360);
+  assert.equal(createReceipt({ ...manualEnv, CELEBRATEDEAL_STREAM_MANUAL_HOURS: "99" }).manualHours, null);
+  // Other scenarios ignore the hours input.
+  assert.equal(createReceipt({ ...env, CELEBRATEDEAL_STREAM_MANUAL_HOURS: "6" }).manualHours, null);
+});
+
+test("manual: runs only the fixture steps and keeps cleanup of the owner session", () => {
+  assert.deepEqual([...skippedStepsFor("chromium", "manual")].sort(), ["ORIGIN_PROBE", "PAGES", "RECOVERY", "RENEWAL", "VIEWER_START"]);
+  assert.deepEqual([...skippedStepsFor("webkit", "manual")].sort(), ["ORIGIN_PROBE", "PAGES", "RECOVERY", "RENEWAL", "VIEWER_START"]);
+  const receipt = createReceipt({ ...manualEnv, CELEBRATEDEAL_STREAM_VIEWER_BROWSER: "webkit" });
+  assert.equal(receipt.viewerBrowser, "chromium");
+  const ran = ["BINDING", "OWNER_SESSION", "FIXTURE_VIDEO", "FIXTURE_FORM", "FIXTURE_TEMPLATE", "FIXTURE_SCRIPT", "FIXTURE_LIVE", "SESSION_CLEANUP"];
+  for (const step of STEPS) setStep(receipt, step, ran.includes(step) ? "PASS" : "SKIPPED");
+  assert.deepEqual(finalVerdict(receipt), { result: "PASS", reason: "NONE" });
+  setStep(receipt, "FIXTURE_LIVE", "NOT_RUN");
+  assert.equal(finalVerdict(receipt).reason, "STEP_FIXTURE_LIVE_NOT_RUN");
+});
+
+test("manual: the output line carries the public live page url and replay deadline, never a token", () => {
+  const receipt = createReceipt({ ...manualEnv, CELEBRATEDEAL_STREAM_MANUAL_HOURS: "24" });
+  for (const step of STEPS) setStep(receipt, step, skippedStepsFor("chromium", "manual").has(step) ? "SKIPPED" : "PASS");
+  Object.assign(receipt, finalVerdict(receipt));
+  receipt.manual.liveSlug = "stream-playback-qa-manual-20261126-1530-ab12cd34";
+  receipt.manual.replayUntil = "2026-11-27T07:30:00.000Z";
+  assert.equal(
+    formatManualLine(receipt),
+    `stream_playback_manual=status:PASS url:${ORIGIN}/live/stream-playback-qa-manual-20261126-1530-ab12cd34 replay_until:2026-11-27T07:30:00.000Z video_lock:UNKNOWN`,
+  );
+  const lines = formatReceiptLines(receipt).split("\n");
+  assert.equal(lines.filter((item) => item.startsWith("stream_playback_manual=")).length, 1);
+  assert.equal(lines.at(-1), formatManualLine(receipt));
+  assert.match(lines[0], /scenario=manual/u);
+  // The JSON receipt stays free of URLs; only the slug and ISO time are recorded.
+  assert.equal(receiptLeaks(JSON.stringify(receipt)), false);
+  const safe = safeReceiptText(receipt);
+  assert.equal(JSON.parse(safe.json).manual.liveSlug, "stream-playback-qa-manual-20261126-1530-ab12cd34");
+  assert.ok(safe.lines.includes(`${ORIGIN}/live/stream-playback-qa-manual-`));
+  receipt.origin = { videoLock: "LOCKED" };
+  assert.match(formatManualLine(receipt), /video_lock:LOCKED$/u);
+  // Other scenarios never print the manual line.
+  assert.equal(formatReceiptLines(createReceipt(env)).includes("stream_playback_manual="), false);
+  // A blocked run, or a missing or unsafe slug, never prints a url.
+  const blocked = createReceipt(manualEnv);
+  blocked.manual.liveSlug = "some-slug";
+  blocked.manual.replayUntil = "2026-11-27T07:30:00.000Z";
+  assert.equal(formatManualLine(blocked), "stream_playback_manual=status:BLOCKED reason:INVALID_BINDING");
+  receipt.manual.liveSlug = "../bad?token=1";
+  assert.doesNotMatch(formatManualLine(receipt), /url:/u);
+});
+
+test("manual: an invalid manual_hours stops before any browser; a launch failure prints no url", async () => {
+  const forbidden = { chromium: { launch: () => { throw new Error("must not launch"); } } };
+  for (const bad of ["0", "73", "x"]) {
+    const receipt = await runStreamPlaybackBrowser({ ...manualEnv, CELEBRATEDEAL_STREAM_MANUAL_HOURS: bad }, {
+      playwright: forbidden, verifyLineage: async () => true, verifyAlias: async () => true,
+    });
+    assert.equal(receipt.result, "BLOCKED");
+    assert.equal(receipt.reason, "INVALID_MANUAL_HOURS");
+    assert.equal(formatManualLine(receipt), "stream_playback_manual=status:BLOCKED reason:INVALID_MANUAL_HOURS");
+  }
+  const broken = { chromium: { launch: async () => { throw new Error("no chrome"); } } };
+  const receipt = await runStreamPlaybackBrowser(manualEnv, { playwright: broken, verifyLineage: async () => true, verifyAlias: async () => true });
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.sideEffects.liveCreates, 0);
+  assert.doesNotMatch(formatReceiptLines(receipt), /url:/u);
+  assert.equal(receipt.steps.find((entry) => entry.step === "VIEWER_START").status, "SKIPPED");
+});
+
+test("manual: workflow offers the scenario and hours input and never runs the WebKit job for it", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/staging-stream-playback-browser.yml", import.meta.url), "utf8");
+  const lines = workflow.split(/\r?\n/u);
+  const options = lines.findIndex((line) => line.trim() === "options:");
+  assert.deepEqual(lines.slice(options + 1, options + 4).map((line) => line.trim()), ["- full", "- quick", "- manual"]);
+  const hours = lines.findIndex((line) => line.trim() === "manual_hours:");
+  assert.ok(hours > 0);
+  assert.deepEqual(lines.slice(hours + 1, hours + 6).map((line) => line.trim()).filter((line) => /^(default|type):/u.test(line)), ['default: "48"', "type: string"]);
+  assert.ok(workflow.includes("CELEBRATEDEAL_STREAM_MANUAL_HOURS: ${{ inputs.manual_hours }}"));
+  const webkitIf = lines.find((line) => /^ {4}if: .*inputs\.webkit/u.test(line));
+  assert.ok(webkitIf?.includes("inputs.scenario != 'manual'"));
+  // The Live a manual run creates is never deleted: the runner has no Live delete call at all.
+  const runner = await readFile(new URL("./staging-stream-playback-browser.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(runner, /method: "DELETE"[^\r\n]*lives|lives[^\r\n]*method: "DELETE"/iu);
 });

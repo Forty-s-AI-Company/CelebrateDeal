@@ -35,6 +35,7 @@ export const FIXTURE = Object.freeze({
   templateName: "Stream Playback QA 報名成功信 v1",
   scriptName: "Stream Playback QA 互動腳本 v1",
   liveTitlePrefix: "Stream Playback QA Replay",
+  manualLiveTitlePrefix: "Stream Playback QA Manual",
 });
 
 export const STEPS = Object.freeze([
@@ -44,12 +45,28 @@ export const STEPS = Object.freeze([
 const STEP_STATUSES = new Set(["PASS", "FAIL", "SKIPPED", "NOT_RUN"]);
 
 export const VIEWER_BROWSERS = Object.freeze(["chromium", "webkit"]);
-export const SCENARIOS = Object.freeze(["full", "quick"]);
+export const SCENARIOS = Object.freeze(["full", "quick", "manual"]);
+export const MANUAL_HOURS_DEFAULT = 48;
+export const MANUAL_HOURS_MIN = 1;
+export const MANUAL_HOURS_MAX = 72;
+
+/** Manual scenario replay window in whole hours: empty means the default, anything outside 1-72 is null. */
+export function parseManualHours(value) {
+  if (value === undefined || value === null || String(value).trim() === "") return MANUAL_HOURS_DEFAULT;
+  const text = String(value).trim();
+  if (!/^\d{1,2}$/u.test(text)) return null;
+  const hours = Number(text);
+  return hours >= MANUAL_HOURS_MIN && hours <= MANUAL_HOURS_MAX ? hours : null;
+}
 
 /** Steps a mode deliberately does not run; everything else must PASS. */
 export function skippedStepsFor(viewerBrowser, scenario) {
   const skipped = new Set();
   if (scenario === "quick") skipped.add("RENEWAL");
+  if (scenario === "manual") {
+    // Manual: only create the replay Live for a human to open on a real Safari / iPhone.
+    for (const name of ["PAGES", "VIEWER_START", "ORIGIN_PROBE", "RECOVERY", "RENEWAL"]) skipped.add(name);
+  }
   if (viewerBrowser === "webkit") {
     // The WebKit job is evidence for the WebKit engine only; pages and the Origin probe
     // are browser-independent and belong to the Chromium job.
@@ -66,7 +83,8 @@ export function skippedStepsFor(viewerBrowser, scenario) {
  * so the renewed token's exp must equal the deadline. Quick: the deadline is already inside the
  * first token's window.
  */
-export function replayDeadlineMinutes(scenario) {
+export function replayDeadlineMinutes(scenario, manualHours = MANUAL_HOURS_DEFAULT) {
+  if (scenario === "manual") return manualHours * 60;
   return scenario === "full" ? 58 : 20;
 }
 
@@ -576,10 +594,13 @@ export function safariCoverage(capabilities) {
 export function createReceipt(env = {}) {
   const viewerBrowser = VIEWER_BROWSERS.includes(env.CELEBRATEDEAL_STREAM_VIEWER_BROWSER) ? env.CELEBRATEDEAL_STREAM_VIEWER_BROWSER : "chromium";
   const scenario = SCENARIOS.includes(env.CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO) ? env.CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO : "full";
+  const manualHours = scenario === "manual" ? parseManualHours(env.CELEBRATEDEAL_STREAM_MANUAL_HOURS) : null;
   return {
     schemaVersion: SCHEMA_VERSION,
     sourceSha: /^[a-f0-9]{40}$/u.test(env.CELEBRATEDEAL_SOURCE_SHA ?? "") ? env.CELEBRATEDEAL_SOURCE_SHA : null,
-    viewerBrowser, scenario,
+    // Manual never plays anything: the viewer browser is fixed to chromium for the owner steps.
+    viewerBrowser: scenario === "manual" ? "chromium" : viewerBrowser, scenario, manualHours,
+    manual: { liveSlug: null, replayUntil: null },
     result: "BLOCKED", reason: "INVALID_BINDING",
     lineage: "NOT_VERIFIED", aliasBinding: "NOT_VERIFIED",
     startedAt: null, totalDurationMs: null,
@@ -588,7 +609,7 @@ export function createReceipt(env = {}) {
     fixture: {
       videoReused: false, videoUploaded: false, videoReadyWaitSeconds: null, readySyncCalls: 0,
       formReused: false, templateReused: false, scriptReused: false, scriptBound: false,
-      liveCreated: false, replayDeadlineMinutes: replayDeadlineMinutes(scenario), formPublic: null,
+      liveCreated: false, replayDeadlineMinutes: replayDeadlineMinutes(scenario, manualHours ?? MANUAL_HOURS_DEFAULT), formPublic: null,
       formScopeSwitched: false, formScopeRestored: null,
     },
     viewer: {
@@ -843,6 +864,19 @@ export function formatRenewalErrorsLine(diagnostics) {
   return `stream_playback_renewal_errors=total:${diagnostics.total} injected_excluded:${diagnostics.injectedExcluded} status:${formatCounts(diagnostics.byStatus)} shapes:${formatCounts(diagnostics.byShape)} initial_exp_s:${value(diagnostics.initialExpOffsetSeconds)} renewal_s:${value(diagnostics.renewalOffsetSeconds)} first_s:${value(diagnostics.firstErrorOffsetSeconds)} last_s:${value(diagnostics.lastErrorOffsetSeconds)} before_exp:${diagnostics.beforeInitialExp} after_exp_0_60:${diagnostics.afterInitialExp0To60} after_exp_later:${diagnostics.afterInitialExpLater} exp_unknown:${diagnostics.expUnknown} retried_ok:${diagnostics.retriedOk} never_ok:${diagnostics.neverOk} playlist_reloads_between:${value(diagnostics.playlistReloadsBetween)} last_playlist_before_first_s:${value(diagnostics.lastPlaylistBeforeFirstErrorOffsetSeconds)}${samples}`;
 }
 
+/**
+ * The one line a human reads after a manual run. The public live page URL is meant for viewers
+ * and may be printed; it never carries a token, cookie or signed URL. Without a created Live
+ * there is no url.
+ */
+export function formatManualLine(receipt) {
+  const manual = receipt.manual ?? {};
+  const ready = receipt.result === "PASS" && /^[a-z0-9-]{1,120}$/u.test(manual.liveSlug ?? "") && typeof manual.replayUntil === "string";
+  if (!ready) return `stream_playback_manual=status:${receipt.result === "PASS" ? "BLOCKED" : receipt.result} reason:${receipt.reason}`;
+  const lock = ["LOCKED", "UNLOCKED"].includes(receipt.origin?.videoLock) ? receipt.origin.videoLock : "UNKNOWN";
+  return `stream_playback_manual=status:PASS url:${ORIGIN}/live/${manual.liveSlug} replay_until:${manual.replayUntil} video_lock:${lock}`;
+}
+
 const yes = (value) => (value === true ? "true" : value === false ? "false" : "null");
 
 /** One grep-able `key=value` line per area; fixed enums, booleans, integers and status codes only. */
@@ -864,6 +898,7 @@ export function formatReceiptLines(receipt) {
     `stream_playback_pages=${receipt.pages.length ? receipt.pages.map((item) => `${item.page}:${item.status}`).join(" ") : "NOT_RUN"}`,
     `stream_playback_coverage=chromium_hlsjs:${receipt.coverage.chromiumHlsJs} safari:${receipt.coverage.safari}(${receipt.coverage.safariReason}) webkit_native_hls:${receipt.coverage.webkitNativeHls} live_renewal:${receipt.coverage.liveRenewal}(${receipt.coverage.liveRenewalReason}) live_preview_player:${receipt.coverage.livePreviewPlayer} post_lock_playback:${receipt.coverage.postLockPlayback}(${receipt.coverage.postLockReason})`,
   ];
+  if (receipt.scenario === "manual") lines.push(formatManualLine(receipt));
   return lines.join("\n");
 }
 

@@ -274,6 +274,7 @@ function recordExpCheck(receipt, source, deadlineSeconds) {
 export async function runStreamPlaybackBrowser(env = process.env, dependencies = {}) {
   const receipt = createReceipt(env);
   const { viewerBrowser, scenario } = receipt;
+  if (scenario === "manual" && receipt.manualHours === null) { receipt.reason = "INVALID_MANUAL_HOURS"; return receipt; }
   const skipped = skippedStepsFor(viewerBrowser, scenario);
   for (const step of skipped) setStep(receipt, step, "SKIPPED");
   if (!validateBrowserSmokeBinding(env)
@@ -641,7 +642,9 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
         ensure(await button.getAttribute("aria-current") === "step", `STUDIO_STEP_${key.toUpperCase()}`);
       };
       await onStep("content");
-      await owner.locator('input[name="title"]').fill(`${FIXTURE.liveTitlePrefix} ${run8}`);
+      await owner.locator('input[name="title"]').fill(scenario === "manual"
+        ? `${FIXTURE.manualLiveTitlePrefix} ${taipeiDateTimeLocal(new Date(now())).replace(/[-:]/gu, "").replace("T", "-")} ${run8}`
+        : `${FIXTURE.liveTitlePrefix} ${run8}`);
       for (let tries = 0; tries < 20 && (await owner.locator("input#live-slug").inputValue()) === ""; tries += 1) await wait(250);
       await owner.locator('select[name="streamMode"]').selectOption("vod");
       ensure(await selectOptionByText(owner.locator('select[name="videoId"]'), FIXTURE.videoTitle), "LIVE_VIDEO_OPTION");
@@ -651,7 +654,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
       const replay = owner.locator('input[name="replayEnabled"]');
       if (!await replay.isChecked()) await replay.check();
       await owner.locator('details[data-advanced-settings="content"]').evaluate((element) => { element.open = true; });
-      fixture.deadline = replayDeadline(now(), replayDeadlineMinutes(scenario));
+      fixture.deadline = replayDeadline(now(), replayDeadlineMinutes(scenario, receipt.manualHours ?? undefined));
       await owner.locator('input[name="replayAvailableUntil"][type="datetime-local"]').fill(taipeiDateTimeLocal(fixture.deadline));
       fixture.liveSlug = await owner.locator("input#live-slug").inputValue();
       ensure(/^[a-z0-9-]{1,120}$/u.test(fixture.liveSlug), "LIVE_SLUG");
@@ -691,106 +694,112 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
     // The viewer phase needs no owner credential.
     await revokeOwnerSession();
 
-    const deadlineSeconds = Math.floor(fixture.deadline.getTime() / 1_000);
-    const viewerContext = await newContext(viewerBrowserInstance, "viewer", { width: 1280, height: 800 });
-    const viewer = await newPage(viewerContext, "viewer");
-    const tracker = createViewerTracker(viewer, receipt, () => currentStep);
-    const sample = async () => viewer.evaluate(readVideoState, PLAYER_VIDEO);
-    const setPaused = async (wanted) => {
-      const current = await sample();
-      if (!current || current.paused === wanted) return current?.paused === wanted;
-      const toggle = viewer.getByTestId("live-playback-toggle");
-      if (await visible(toggle, 3_000)) await toggle.first().click({ timeout: 5_000 });
-      else await viewer.evaluate((selector, pauseIt) => {
-        const video = document.querySelector(selector);
-        if (pauseIt) video?.pause(); else void video?.play()?.catch(() => undefined);
-      }, PLAYER_VIDEO, wanted);
-      for (let tries = 0; tries < 40; tries += 1) {
-        if ((await sample())?.paused === wanted) return true;
-        await wait(250);
-      }
-      return false;
-    };
-    /** Opens the public replay as a fresh visitor and waits until it is really playing. */
-    const startViewer = async () => {
-      const sourcesBefore = tracker.state.sources.length;
-      navigation.active = true;
-      let response;
-      try {
-        response = await viewer.goto(`${ORIGIN}/live/${fixture.liveSlug}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      } finally {
-        navigation.active = false;
-        navigation.settledUntil = Date.now() + 2_000;
-      }
-      ensure(response?.status() === 200, "LIVE_PAGE_STATUS");
-      ensure(await visible(viewer.locator(PLAYER_VIDEO), 30_000), "PLAYER_NOT_RENDERED");
-      for (let tries = 0; tries < 120 && tracker.state.sources.length === sourcesBefore; tries += 1) await wait(250);
-      const source = tracker.latestSource();
-      ensure(tracker.state.sources.length > sourcesBefore && source?.status === 200, "PLAYBACK_SOURCE_MISSING");
-      for (let tries = 0; tries < 120 && ((await sample())?.readyState ?? 0) < 1; tries += 1) await wait(250);
-      ensure(await setPaused(false), "PLAY_NOT_STARTED");
-      const first = await sample();
-      for (let tries = 0; tries < 60; tries += 1) {
+    if (scenario === "manual") {
+      // Manual: the Live stays for a human to open on a real Safari / iPhone; nothing is played here.
+      receipt.manual.liveSlug = fixture.liveSlug;
+      receipt.manual.replayUntil = fixture.deadline.toISOString();
+    } else {
+      const deadlineSeconds = Math.floor(fixture.deadline.getTime() / 1_000);
+      const viewerContext = await newContext(viewerBrowserInstance, "viewer", { width: 1280, height: 800 });
+      const viewer = await newPage(viewerContext, "viewer");
+      const tracker = createViewerTracker(viewer, receipt, () => currentStep);
+      const sample = async () => viewer.evaluate(readVideoState, PLAYER_VIDEO);
+      const setPaused = async (wanted) => {
         const current = await sample();
-        if (current && first && current.currentTime - first.currentTime >= 1.5) return { source, playing: current };
-        await wait(500);
-      }
-      throw new ConditionNotMet("PLAYBACK_NOT_ADVANCING");
-    };
-
-    await step("VIEWER_START", async () => {
-      const { source, playing } = await startViewer();
-      receipt.viewer.admissionOk = tracker.state.admissionOk > 0;
-      receipt.viewer.tokenFormPlayback = Boolean(source.manifest && source.token && source.claims?.subIsUid);
-      receipt.viewer.playerPath = classifyPlayerPath(playing.src);
-      const exp = recordExpCheck(receipt, source, deadlineSeconds);
-      receipt.viewer.firstPlayback = {
-        expiresInSeconds: source.expiresInSeconds, expMatchesExpected: exp?.matches ?? false,
-        deadlineCapped: exp?.deadlineCapped ?? null, expEqualsDeadline: exp?.expEqualsDeadline ?? null,
+        if (!current || current.paused === wanted) return current?.paused === wanted;
+        const toggle = viewer.getByTestId("live-playback-toggle");
+        if (await visible(toggle, 3_000)) await toggle.first().click({ timeout: 5_000 });
+        else await viewer.evaluate((selector, pauseIt) => {
+          const video = document.querySelector(selector);
+          if (pauseIt) video?.pause(); else void video?.play()?.catch(() => undefined);
+        }, PLAYER_VIDEO, wanted);
+        for (let tries = 0; tries < 40; tries += 1) {
+          if ((await sample())?.paused === wanted) return true;
+          await wait(250);
+        }
+        return false;
       };
-      receipt.capabilities = await viewer.evaluate(() => {
-        const probe = document.createElement("video");
-        const mse = typeof window.MediaSource === "function";
-        const managed = typeof window.ManagedMediaSource === "function";
-        const h264 = 'video/mp4; codecs="avc1.42E01E"';
-        return {
-          nativeHlsType: probe.canPlayType("application/vnd.apple.mpegurl") !== "",
-          mediaSource: mse, managedMediaSource: managed,
-          mseH264: (mse && window.MediaSource.isTypeSupported(h264)) || (managed && window.ManagedMediaSource.isTypeSupported(h264)),
+      /** Opens the public replay as a fresh visitor and waits until it is really playing. */
+      const startViewer = async () => {
+        const sourcesBefore = tracker.state.sources.length;
+        navigation.active = true;
+        let response;
+        try {
+          response = await viewer.goto(`${ORIGIN}/live/${fixture.liveSlug}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        } finally {
+          navigation.active = false;
+          navigation.settledUntil = Date.now() + 2_000;
+        }
+        ensure(response?.status() === 200, "LIVE_PAGE_STATUS");
+        ensure(await visible(viewer.locator(PLAYER_VIDEO), 30_000), "PLAYER_NOT_RENDERED");
+        for (let tries = 0; tries < 120 && tracker.state.sources.length === sourcesBefore; tries += 1) await wait(250);
+        const source = tracker.latestSource();
+        ensure(tracker.state.sources.length > sourcesBefore && source?.status === 200, "PLAYBACK_SOURCE_MISSING");
+        for (let tries = 0; tries < 120 && ((await sample())?.readyState ?? 0) < 1; tries += 1) await wait(250);
+        ensure(await setPaused(false), "PLAY_NOT_STARTED");
+        const first = await sample();
+        for (let tries = 0; tries < 60; tries += 1) {
+          const current = await sample();
+          if (current && first && current.currentTime - first.currentTime >= 1.5) return { source, playing: current };
+          await wait(500);
+        }
+        throw new ConditionNotMet("PLAYBACK_NOT_ADVANCING");
+      };
+
+      await step("VIEWER_START", async () => {
+        const { source, playing } = await startViewer();
+        receipt.viewer.admissionOk = tracker.state.admissionOk > 0;
+        receipt.viewer.tokenFormPlayback = Boolean(source.manifest && source.token && source.claims?.subIsUid);
+        receipt.viewer.playerPath = classifyPlayerPath(playing.src);
+        const exp = recordExpCheck(receipt, source, deadlineSeconds);
+        receipt.viewer.firstPlayback = {
+          expiresInSeconds: source.expiresInSeconds, expMatchesExpected: exp?.matches ?? false,
+          deadlineCapped: exp?.deadlineCapped ?? null, expEqualsDeadline: exp?.expEqualsDeadline ?? null,
         };
+        receipt.capabilities = await viewer.evaluate(() => {
+          const probe = document.createElement("video");
+          const mse = typeof window.MediaSource === "function";
+          const managed = typeof window.ManagedMediaSource === "function";
+          const h264 = 'video/mp4; codecs="avc1.42E01E"';
+          return {
+            nativeHlsType: probe.canPlayType("application/vnd.apple.mpegurl") !== "",
+            mediaSource: mse, managedMediaSource: managed,
+            mseH264: (mse && window.MediaSource.isTypeSupported(h264)) || (managed && window.ManagedMediaSource.isTypeSupported(h264)),
+          };
+        });
+        receipt.capabilities.playerPath = receipt.viewer.playerPath;
+        ensure(receipt.viewer.admissionOk, "ADMISSION_NOT_GRANTED");
+        ensure(receipt.viewer.tokenFormPlayback, "PLAYBACK_NOT_TOKEN_FORM");
+        ensure(tracker.state.tokenForm > 0, "NO_TOKEN_FORM_STREAM_REQUEST");
+        // Only URLs the app itself chose must be signed; uid-form playlist/segment URIs written by
+        // Cloudflare into its own playlists are tallied by shape and must still load.
+        ensure(tracker.state.appUidForm === 0, "APP_UID_FORM_STREAM_REQUESTS");
+        ensure(receipt.viewer.providerRequestFailures === 0, "PROVIDER_STREAM_REQUESTS_FAILED");
+        ensure(exp?.matches === true, "TOKEN_EXP_MISMATCH");
+        // Quick: the deadline is inside the first token's window, so exp must be the deadline itself.
+        if (scenario === "quick") ensure(exp.deadlineCapped && exp.expEqualsDeadline, "TOKEN_EXP_NOT_DEADLINE");
       });
-      receipt.capabilities.playerPath = receipt.viewer.playerPath;
-      ensure(receipt.viewer.admissionOk, "ADMISSION_NOT_GRANTED");
-      ensure(receipt.viewer.tokenFormPlayback, "PLAYBACK_NOT_TOKEN_FORM");
-      ensure(tracker.state.tokenForm > 0, "NO_TOKEN_FORM_STREAM_REQUEST");
-      // Only URLs the app itself chose must be signed; uid-form playlist/segment URIs written by
-      // Cloudflare into its own playlists are tallied by shape and must still load.
-      ensure(tracker.state.appUidForm === 0, "APP_UID_FORM_STREAM_REQUESTS");
-      ensure(receipt.viewer.providerRequestFailures === 0, "PROVIDER_STREAM_REQUESTS_FAILED");
-      ensure(exp?.matches === true, "TOKEN_EXP_MISMATCH");
-      // Quick: the deadline is inside the first token's window, so exp must be the deadline itself.
-      if (scenario === "quick") ensure(exp.deadlineCapped && exp.expEqualsDeadline, "TOKEN_EXP_NOT_DEADLINE");
-    });
 
-    if (!skipped.has("ORIGIN_PROBE")) {
-      await softStep("ORIGIN_PROBE", async () => {
-        receipt.origin = await probeAllowedOrigins(tracker.latestSource()?.playbackUrl ?? null, fetchImpl);
-        ensure(receipt.origin.status === "PASS", "ORIGIN_PROBE_FAILED");
-      });
-    }
-
-    await softStep("RECOVERY", async () => {
-      for (const recoveryCase of RECOVERY_CASES) {
-        receipt.recovery.push(await runRecoveryCase({ viewer, tracker, sample, setPaused, startViewer, wait, receipt, deadlineSeconds, ...recoveryCase }));
+      if (!skipped.has("ORIGIN_PROBE")) {
+        await softStep("ORIGIN_PROBE", async () => {
+          receipt.origin = await probeAllowedOrigins(tracker.latestSource()?.playbackUrl ?? null, fetchImpl);
+          ensure(receipt.origin.status === "PASS", "ORIGIN_PROBE_FAILED");
+        });
       }
-      ensure(receipt.recovery.every((item) => item.status === "PASS"), "RECOVERY_FAILED");
-    });
 
-    if (!skipped.has("RENEWAL")) {
-      await softStep("RENEWAL", async () => {
-        receipt.renewal = await runRenewal({ tracker, sample, startViewer, wait, receipt, deadlineSeconds, viewer });
-        ensure(receipt.renewal.status === "PASS", "RENEWAL_FAILED");
+      await softStep("RECOVERY", async () => {
+        for (const recoveryCase of RECOVERY_CASES) {
+          receipt.recovery.push(await runRecoveryCase({ viewer, tracker, sample, setPaused, startViewer, wait, receipt, deadlineSeconds, ...recoveryCase }));
+        }
+        ensure(receipt.recovery.every((item) => item.status === "PASS"), "RECOVERY_FAILED");
       });
+
+      if (!skipped.has("RENEWAL")) {
+        await softStep("RENEWAL", async () => {
+          receipt.renewal = await runRenewal({ tracker, sample, startViewer, wait, receipt, deadlineSeconds, viewer });
+          ensure(receipt.renewal.status === "PASS", "RENEWAL_FAILED");
+        });
+      }
     }
 
     currentStep = "SESSION_CLEANUP";
@@ -815,7 +824,9 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
   }
 
   // Coverage is stated, never inferred from a pass elsewhere.
-  if (viewerBrowser === "chromium") {
+  if (scenario === "manual") {
+    receipt.coverage.chromiumHlsJs = "NOT_RUN";
+  } else if (viewerBrowser === "chromium") {
     receipt.coverage.chromiumHlsJs = receipt.result === "PASS" && receipt.viewer.playerPath === "HLS_JS" && scenario === "full" ? "PASS"
       : receipt.result === "PASS" && receipt.viewer.playerPath === "HLS_JS" ? "PASS_WITHOUT_RENEWAL" : "FAIL";
   } else {
@@ -1214,6 +1225,7 @@ export function safeReceiptText(receipt) {
   blocked.sourceSha = receipt.sourceSha;
   blocked.viewerBrowser = receipt.viewerBrowser;
   blocked.scenario = receipt.scenario;
+  blocked.manualHours = receipt.manualHours ?? null;
   blocked.reason = "RECEIPT_REDACTION_FAILED";
   return { json: JSON.stringify(blocked), lines: formatReceiptLines(blocked) };
 }
