@@ -91,7 +91,18 @@ Preview hostname 與 sha 的對應，而且會隨 sha 在 `master` 停留的時�
   限制：`deployment: false` 與 GitHub App 的 custom deployment protection rule 不相容（job 會直接失敗）；
   日後在這個 environment 加 custom rule 前要先改回或另行處理。另外，閘門只證明「這個 sha 曾由 Vercel 建置到這個 host」，
   不保證是最新部署；「是不是目前版本」由 alias 自證與 protected master 檢查負責。
-  目前只檢查紀錄（deployment）的建立者是 `vercel[bot]`，尚未檢查 `success` status 的建立者（後續項目）。
+- status 建立者（2026-11-26，PR #710 MINOR-1）：status 與紀錄用同一條身分規則
+  （`creator.login === "vercel[bot]"` 且 `creator.type === "Bot"`）。有 `deployments: write` 的人都能在
+  Vercel 紀錄上加一筆 `success` status 指向別的 host，所以：
+  - 「最新 status」只從 `vercel[bot]` 建立的 status 中取；其他人建立的 status（任何 state）一律略過，
+    不決定 ready 也不提供 host。
+  - 開頭的 `inactive` 標記不論誰建立都算（它只會多加「較新 Vercel 紀錄」那道檢查，不會放寬）。
+  - 非 `vercel[bot]` 的 `success` 若指向的 host 與 Vercel 自己的有效 `success` 不同（或 Vercel 根本沒有有效
+    `success`），整個閘門回 `GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED`；host 相同則只是略過。
+  - 只讀第一頁（最新 10 筆）；Vercel 的 `success` 被其他 status 擠出第一頁就是找不到，照樣失敗。
+  - 2026-11-26 實測（唯讀 `gh api`）：Vercel 紀錄上的 `success`、`failure`、`inactive` status 的
+    `creator` 都是 `{ login: "vercel[bot]", id: 35613825, type: "Bot" }`；GitHub 自動補的 `inactive`
+    也記在 `vercel[bot]` 名下（例如紀錄 8045452227）。
 
 錯誤碼：
 
@@ -100,6 +111,7 @@ Preview hostname 與 sha 的對應，而且會隨 sha 在 `master` 停留的時�
 | `GITHUB_DEPLOYMENT_NO_VERCEL_CANDIDATE` | 列表有紀錄，但沒有任何一筆是 `vercel[bot]`（Bot）建立；在 `ref` 過濾正常時只會出現在 ref 等於 sha 卻不是 Vercel 建立的紀錄，或 API 忽略了 `ref`。 |
 | `GITHUB_DEPLOYMENT_AMBIGUOUS` | 完全沒有候選（含 `ref=<sha>` 查無紀錄，通常是 Vercel 尚未部署這個 sha 或 GitHub 整合中斷），或多於一筆 Vercel 紀錄同時符合 host。 |
 | `GITHUB_DEPLOYMENT_LINEAGE_MISMATCH` | 有 Vercel 候選，但沒有一筆成功且 host 相符（`inactive` 標記之下的 status 也算），或相符的那筆已被標 `inactive` 而同 sha 有更新的 Vercel 紀錄指向別處。 |
+| `GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED` | Vercel 紀錄上有一筆不是 `vercel[bot]`（Bot）建立的 `success` status，指向的 host 與 Vercel 自己的有效 `success` 不同（或 Vercel 沒有有效 `success`）。有人試圖把 workflow 導到別的 host，一律擋下。 |
 | `GITHUB_DEPLOYMENT_PAGE_LIMIT_EXHAUSTED` | 列表超過 10 頁（1000 筆）仍未結束。 |
 | `GITHUB_DEPLOYMENT_READ_BUDGET_EXHAUSTED` | 列表頁數加 Vercel statuses 讀取超過 20 次。 |
 

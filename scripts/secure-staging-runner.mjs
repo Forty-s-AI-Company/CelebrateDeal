@@ -274,12 +274,18 @@ function nextDeploymentPage(response, itemCount, currentPage) {
   return null;
 }
 
-function isVercelCreatedDeployment(item) {
+// One identity rule for the deployment record and for the status whose URL is trusted: anyone
+// with `deployments: write` can add a status to Vercel's record, so a status creator is checked
+// exactly like the deployment creator (observed 2026-11-26: Vercel's success, failure and inactive
+// statuses all carry creator { login: "vercel[bot]", type: "Bot" }).
+function isCreatedByVercelBot(item) {
   return item?.creator?.login === VERCEL_DEPLOYMENT_CREATOR && item?.creator?.type === "Bot";
 }
 
+const UNTRUSTED_STATUS_CREATOR_ERROR = "GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED";
+
 /**
- * A deployment's effective status: the newest one that is not `inactive`.
+ * A deployment's effective status: the newest status created by vercel[bot] that is not `inactive`.
  *
  * A newer Vercel deploy does not mark an older Vercel record inactive (observed 2026-11-24/25:
  * records keep `success` across later Vercel deploys, as if Vercel posts with auto_inactive off). The
@@ -288,13 +294,32 @@ function isVercelCreatedDeployment(item) {
  * `deployment: false`. `inactive` therefore says "something newer exists in this environment",
  * not "this build is gone"; Vercel deployments are immutable. Only leading `inactive` entries are
  * skipped: whatever Vercel posted before them must itself be `success` with the exact host.
+ *
+ * Statuses not created by vercel[bot] never decide readiness or the host; they are skipped. A
+ * leading `inactive` marker counts whoever created it, because it only ever adds the stricter
+ * newer-record check in verifyDeployment. A `success` by anyone else that names a different host
+ * than Vercel's own effective success (any host at all while Vercel has none) is an attempt to
+ * steer the run, so it is reported and the caller fails closed. GitHub lists statuses newest first
+ * and only the first page is read: a Vercel success pushed off that page is not found (fails closed).
  */
 function effectiveDeploymentStatus(statuses) {
   const list = Array.isArray(statuses) ? statuses : [];
-  let index = 0;
-  while (index < list.length && list[index]?.state === "inactive") index += 1;
-  const effective = index < list.length ? list[index] : null;
-  return { effective, inactiveMarked: index > 0 };
+  let effective = null;
+  let inactiveMarked = false;
+  for (const status of list) {
+    if (status?.state === "inactive") {
+      inactiveMarked = true;
+      continue;
+    }
+    if (!isCreatedByVercelBot(status)) continue;
+    effective = status;
+    break;
+  }
+  const trustedHost = effective?.state === "success" ? deploymentStatusHost(effective) : "";
+  const untrustedSuccessConflict = list.some((status) => !isCreatedByVercelBot(status)
+    && status?.state === "success"
+    && deploymentStatusHost(status) !== trustedHost);
+  return { effective, inactiveMarked, untrustedSuccessConflict };
 }
 
 export async function verifyDeployment(source, fetchImpl = fetch) {
@@ -331,7 +356,7 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
     // Records created by Actions jobs are skipped without a statuses read, so they never spend the budget.
     // A record created while paging shifts older ones onto the next page, so the same deployment
     // can be listed twice. Each id is read and counted once; a repeat is not a second match.
-    const candidates = environmentCandidates.filter((item) => isVercelCreatedDeployment(item) && !seenCandidateIds.has(item.id));
+    const candidates = environmentCandidates.filter((item) => isCreatedByVercelBot(item) && !seenCandidateIds.has(item.id));
     for (const candidate of candidates) seenCandidateIds.add(candidate.id);
     candidateCount += candidates.length;
     const nextPage = nextDeploymentPage(response, pageDeployments.length, page);
@@ -344,7 +369,8 @@ export async function verifyDeployment(source, fetchImpl = fetch) {
       reads += 1;
       if (statusResponse.status !== 200 || statusResponse.headers.has("location")) throw new Error("GITHUB_DEPLOYMENT_STATUS_READ_FAILED");
       const statuses = await statusResponse.json();
-      const { effective, inactiveMarked } = effectiveDeploymentStatus(statuses);
+      const { effective, inactiveMarked, untrustedSuccessConflict } = effectiveDeploymentStatus(statuses);
+      if (untrustedSuccessConflict) throw new Error(UNTRUSTED_STATUS_CREATOR_ERROR);
       const host = effective?.state === "success" ? deploymentStatusHost(effective) : "";
       vercelCandidateHosts.set(candidate.id, host);
       const deploymentMatched = host === source.CELEBRATEDEAL_DEPLOYMENT_HOST;

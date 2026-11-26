@@ -39,6 +39,7 @@ const APPROVED_BACKUP_BLOBS = Object.freeze({
     "0f869399153fd058a988a25fe5c3f56dcd8acd38", // #534: lineage gate lists by ref=<sha>, reads statuses only for vercel[bot] deployments once per id (page size 100, page limit 10); WP2 backup, restore and receipt unchanged.
     "9c1dde3c118ebcf3f0f67b3a1b3736d1e46014d3", // #542: shared protected-master gate and fixed-alias self-attestation for alias-using runners; WP2 is lineage-only (Preview probe skipped, receipt aliasAttestation "not_applicable", retained receipts still validate); WP2 backup and restore unchanged.
     "6f2ad57e114786223a8585532d463b3c294142ec", // #710 (reviewed): lineage gate reads 10 statuses and accepts a Vercel record GitHub marked inactive only when the status under it is success for the exact host and no newer Vercel record for the sha points elsewhere; WP2 backup, restore and receipt unchanged.
+    "2d24ae727c4f1c34ec35173b712fd3c3b1007674", // #724 (reviewed): lineage gate trusts only statuses created by vercel[bot] (login + type Bot); a non-bot success for another host fails closed with GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED; WP2 backup, restore and receipt unchanged.
   ],
 });
 

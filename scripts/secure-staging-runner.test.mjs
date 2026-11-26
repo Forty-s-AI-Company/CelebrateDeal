@@ -127,7 +127,7 @@ test("deployment verification requires one exact non-production successful Previ
   const source = environment();
   const responses = [
     new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
-    new Response(JSON.stringify([{ state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
   ];
   const result = await verifyThroughGitHub(source, async () => responses.shift());
   assert.equal(result.sourceMatched, true);
@@ -144,8 +144,8 @@ test("deployment verification reads every candidate and ignores latest failure r
       { id: 41, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
       { id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
     ]), { status: 200 }),
-    new Response(JSON.stringify([{ state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
-    new Response(JSON.stringify([{ state: "success", environment_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "success", environment_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
   ];
   const result = await verifyThroughGitHub(source, async (input) => {
     requests.push(new URL(String(input)));
@@ -175,9 +175,9 @@ test("deployment verification follows a Link-header page for a unique exact-host
       status: 200,
       headers: { Link: '<https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/deployments?page=2>; rel="next"' },
     }),
-    new Response(JSON.stringify([{ state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
     new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
-    new Response(JSON.stringify([{ state: "success", target_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "success", target_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
   ];
   const result = await verifyThroughGitHub(source, async (input) => {
     requests.push(new URL(String(input)));
@@ -214,7 +214,7 @@ test("deployment verification accepts a valid terminal Link header without next"
       status: 200,
       headers: { Link: '<https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/deployments?page=1>; rel="last"' },
     }),
-    new Response(JSON.stringify([{ state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
   ];
   const result = await verifyThroughGitHub(source, async (input) => {
     requests.push(new URL(String(input)));
@@ -234,9 +234,9 @@ test("deployment verification reads across full pages before rejecting multiple 
   ];
   const responses = [
     new Response(JSON.stringify(pageOne), { status: 200 }),
-    new Response(JSON.stringify([{ state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
     new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
-    new Response(JSON.stringify([{ state: "success", target_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "success", target_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
   ];
   await assert.rejects(
     verifyThroughGitHub(source, async (input) => {
@@ -257,7 +257,7 @@ test("deployment verification fails closed when pagination exhausts the total Gi
       const request = new URL(String(input));
       requests.push(request);
       if (request.pathname.endsWith("/statuses")) {
-        return new Response(JSON.stringify([{ state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 });
+        return new Response(JSON.stringify([{ creator: vercelCreator, state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 });
       }
       const page = Number(request.searchParams.get("page"));
       // Full 100-item pages: 10 Vercel records each; the padded Actions records (ref "master") are dropped by the ref filter.
@@ -278,7 +278,7 @@ test("deployment verification fails closed with zero successful exact-host candi
   const source = environment();
   const responses = [
     new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
-    new Response(JSON.stringify([{ state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "failure", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
   ];
   await assert.rejects(
     verifyThroughGitHub(source, async () => responses.shift()),
@@ -293,8 +293,8 @@ test("deployment verification fails closed with multiple successful exact-host c
       { id: 41, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
       { id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator },
     ]), { status: 200 }),
-    new Response(JSON.stringify([{ state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
-    new Response(JSON.stringify([{ state: "success", target_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "success", environment_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "success", target_url: "https://safe-preview.vercel.app/" }]), { status: 200 }),
   ];
   await assert.rejects(
     verifyThroughGitHub(source, async () => responses.shift()),
@@ -306,7 +306,7 @@ test("deployment verification accepts GitHub target_url and rejects conflicting 
   const source = environment();
   const targetUrlResponses = [
     new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
-    new Response(JSON.stringify([{ state: "success", target_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
+    new Response(JSON.stringify([{ creator: vercelCreator, state: "success", target_url: "https://safe-preview.vercel.app" }]), { status: 200 }),
   ];
   const result = await verifyThroughGitHub(source, async () => targetUrlResponses.shift());
   assert.equal(result.deploymentMatched, true);
@@ -314,6 +314,7 @@ test("deployment verification accepts GitHub target_url and rejects conflicting 
   const conflictingResponses = [
     new Response(JSON.stringify([{ id: 42, sha, ref: sha, environment: "Preview – celebrate-deal-staging", production_environment: false, creator: vercelCreator }]), { status: 200 }),
     new Response(JSON.stringify([{
+      creator: vercelCreator,
       state: "success",
       environment_url: "https://safe-preview.vercel.app",
       target_url: "https://different-preview.vercel.app",
@@ -332,7 +333,7 @@ function fakeDeploymentsApi(records, statusesById, requests, { honorRef = true }
     requests.push(request);
     if (request.pathname.endsWith("/statuses")) {
       const id = Number(request.pathname.split("/").at(-2));
-      return new Response(JSON.stringify(statusesById[id] ?? [{ state: "failure" }]), { status: 200 });
+      return new Response(JSON.stringify(statusesById[id] ?? [{ creator: vercelCreator, state: "failure" }]), { status: 200 });
     }
     const ref = request.searchParams.get("ref");
     const matching = honorRef ? records.filter((item) => item.ref === ref) : records;
@@ -343,7 +344,7 @@ function fakeDeploymentsApi(records, statusesById, requests, { honorRef = true }
   };
 }
 
-const exactHostSuccess = Object.freeze([{ state: "success", environment_url: "https://safe-preview.vercel.app" }]);
+const exactHostSuccess = Object.freeze([{ creator: vercelCreator, state: "success", environment_url: "https://safe-preview.vercel.app" }]);
 const actionsRecords = (count, firstId = 900) => Array.from({ length: count }, (_, index) => actionsDeployment(firstId + index, index));
 const listRequests = (requests) => requests.filter((request) => request.pathname === deploymentsPath);
 const statusRequests = (requests) => requests.filter((request) => request.pathname.endsWith("/statuses"));
@@ -422,7 +423,7 @@ test("deployment verification does not trust a vercel[bot] login without the Bot
 test("deployment verification rejects a Vercel record whose host does not match", async () => {
   const source = environment();
   const records = [...actionsRecords(180), vercelDeployment(7464859261)];
-  const statusesById = { 7464859261: [{ state: "success", environment_url: "https://other-preview.vercel.app" }] };
+  const statusesById = { 7464859261: [{ creator: vercelCreator, state: "success", environment_url: "https://other-preview.vercel.app" }] };
   await assert.rejects(verifyDeployment(source, fakeDeploymentsApi(records, statusesById, [])), /GITHUB_DEPLOYMENT_LINEAGE_MISMATCH/u);
   await assert.rejects(verifyDeployment(source, fakeDeploymentsApi(records, statusesById, [], { honorRef: false })), /GITHUB_DEPLOYMENT_LINEAGE_MISMATCH/u);
 });
@@ -430,7 +431,7 @@ test("deployment verification rejects a Vercel record whose host does not match"
 test("deployment verification rejects two matching Vercel records as ambiguous", async () => {
   const source = environment();
   const records = [vercelDeployment(41), ...actionsRecords(180), vercelDeployment(42)];
-  const statusesById = { 41: exactHostSuccess, 42: [{ state: "success", target_url: "https://safe-preview.vercel.app/" }] };
+  const statusesById = { 41: exactHostSuccess, 42: [{ creator: vercelCreator, state: "success", target_url: "https://safe-preview.vercel.app/" }] };
   for (const honorRef of [true, false]) {
     const requests = [];
     await assert.rejects(verifyDeployment(source, fakeDeploymentsApi(records, statusesById, requests, { honorRef })), /GITHUB_DEPLOYMENT_AMBIGUOUS/u);
@@ -449,7 +450,7 @@ test("deployment verification counts a Vercel record repeated across pages once,
     requests.push(request);
     if (request.pathname.endsWith("/statuses")) {
       const id = Number(request.pathname.split("/").at(-2));
-      return new Response(JSON.stringify(statusesById[id] ?? [{ state: "failure" }]), { status: 200 });
+      return new Response(JSON.stringify(statusesById[id] ?? [{ creator: vercelCreator, state: "failure" }]), { status: 200 });
     }
     const page = Number(request.searchParams.get("page"));
     return new Response(JSON.stringify(page === 1 ? pageOne : pageTwo), { status: 200, headers: githubLink(page, 2) });
@@ -501,9 +502,10 @@ test("deployment verification accepts GitHub's final-page Link shape but rejects
 
 // 2026-11-25 shape (record 8045452227): Vercel posted success with the Preview host, then GitHub
 // added `inactive` when an Actions job in the same environment recorded its own successful deployment.
+// Both statuses carry creator vercel[bot] (Bot) in the real payload, the marker included.
 const inactiveAfterExactHostSuccess = Object.freeze([
-  { state: "inactive", environment_url: "", target_url: "https://safe-preview.vercel.app" },
-  { state: "success", environment_url: "https://safe-preview.vercel.app", target_url: "https://safe-preview.vercel.app" },
+  { creator: vercelCreator, state: "inactive", environment_url: "", target_url: "https://safe-preview.vercel.app" },
+  { creator: vercelCreator, state: "success", environment_url: "https://safe-preview.vercel.app", target_url: "https://safe-preview.vercel.app" },
 ]);
 
 test("deployment verification accepts a Vercel record marked inactive after its exact-host success", async () => {
@@ -518,7 +520,7 @@ test("deployment verification accepts a Vercel record marked inactive after its 
     assert.deepEqual(statusRequests(requests).map((request) => [request.pathname, request.searchParams.get("per_page")]), [[`${deploymentsPath}/7464859261/statuses`, "10"]]);
   }
   // Repeated leading markers are skipped the same way.
-  const repeated = [{ state: "inactive" }, { state: "inactive" }, ...exactHostSuccess];
+  const repeated = [{ creator: vercelCreator, state: "inactive" }, { creator: vercelCreator, state: "inactive" }, ...exactHostSuccess];
   const result = await verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: repeated }, []));
   assert.equal(result.deploymentMatched, true);
 });
@@ -526,14 +528,14 @@ test("deployment verification accepts a Vercel record marked inactive after its 
 test("deployment verification still requires success with the exact host beneath an inactive marker", async () => {
   const source = environment();
   const rejected = {
-    "only inactive statuses": [{ state: "inactive", environment_url: "https://safe-preview.vercel.app" }],
-    "inactive over failure": [{ state: "inactive" }, { state: "failure", environment_url: "https://safe-preview.vercel.app" }],
-    "inactive over pending": [{ state: "inactive" }, { state: "pending", environment_url: "https://safe-preview.vercel.app" }],
-    "inactive over error over success": [{ state: "inactive" }, { state: "error" }, ...exactHostSuccess],
-    "inactive over another host": [{ state: "inactive" }, { state: "success", environment_url: "https://other-preview.vercel.app" }],
-    "inactive over conflicting URLs": [{ state: "inactive" }, { state: "success", environment_url: "https://safe-preview.vercel.app", target_url: "https://other-preview.vercel.app" }],
-    "inactive over a non-Vercel host": [{ state: "inactive" }, { state: "success", environment_url: "https://safe-preview.example.net" }],
-    "more inactive markers than one statuses page": Array.from({ length: 10 }, () => ({ state: "inactive" })),
+    "only inactive statuses": [{ creator: vercelCreator, state: "inactive", environment_url: "https://safe-preview.vercel.app" }],
+    "inactive over failure": [{ creator: vercelCreator, state: "inactive" }, { creator: vercelCreator, state: "failure", environment_url: "https://safe-preview.vercel.app" }],
+    "inactive over pending": [{ creator: vercelCreator, state: "inactive" }, { creator: vercelCreator, state: "pending", environment_url: "https://safe-preview.vercel.app" }],
+    "inactive over error over success": [{ creator: vercelCreator, state: "inactive" }, { creator: vercelCreator, state: "error" }, ...exactHostSuccess],
+    "inactive over another host": [{ creator: vercelCreator, state: "inactive" }, { creator: vercelCreator, state: "success", environment_url: "https://other-preview.vercel.app" }],
+    "inactive over conflicting URLs": [{ creator: vercelCreator, state: "inactive" }, { creator: vercelCreator, state: "success", environment_url: "https://safe-preview.vercel.app", target_url: "https://other-preview.vercel.app" }],
+    "inactive over a non-Vercel host": [{ creator: vercelCreator, state: "inactive" }, { creator: vercelCreator, state: "success", environment_url: "https://safe-preview.example.net" }],
+    "more inactive markers than one statuses page": Array.from({ length: 10 }, () => ({ creator: vercelCreator, state: "inactive" })),
     "no statuses": [],
   };
   for (const [label, statuses] of Object.entries(rejected)) {
@@ -550,10 +552,10 @@ test("deployment verification still requires success with the exact host beneath
 test("an inactive-marked match is rejected once a newer Vercel record for the sha points elsewhere", async () => {
   const source = environment();
   const newerStatuses = {
-    "redeployed to another host": [{ state: "success", environment_url: "https://other-preview.vercel.app" }],
-    "newer deploy still building": [{ state: "pending" }],
-    "newer deploy failed": [{ state: "failure", environment_url: "https://other-preview.vercel.app" }],
-    "newer deploy itself inactive over another host": [{ state: "inactive" }, { state: "success", environment_url: "https://other-preview.vercel.app" }],
+    "redeployed to another host": [{ creator: vercelCreator, state: "success", environment_url: "https://other-preview.vercel.app" }],
+    "newer deploy still building": [{ creator: vercelCreator, state: "pending" }],
+    "newer deploy failed": [{ creator: vercelCreator, state: "failure", environment_url: "https://other-preview.vercel.app" }],
+    "newer deploy itself inactive over another host": [{ creator: vercelCreator, state: "inactive" }, { creator: vercelCreator, state: "success", environment_url: "https://other-preview.vercel.app" }],
   };
   for (const [label, statuses] of Object.entries(newerStatuses)) {
     for (const honorRef of [true, false]) {
@@ -570,7 +572,7 @@ test("an inactive-marked match is rejected once a newer Vercel record for the sh
 
 test("an inactive-marked match is unaffected by older Vercel records, and a plain success keeps its old rules", async () => {
   const source = environment();
-  const otherHost = [{ state: "success", environment_url: "https://other-preview.vercel.app" }];
+  const otherHost = [{ creator: vercelCreator, state: "success", environment_url: "https://other-preview.vercel.app" }];
   const olderOther = await verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(43), vercelDeployment(41)], { 43: inactiveAfterExactHostSuccess, 41: otherHost }, []));
   assert.equal(olderOther.deploymentMatched, true);
 
@@ -595,6 +597,154 @@ test("deployment verification stops paginating at the list page limit", async ()
   );
   assert.equal(requests.length, 10);
   assert.equal(statusRequests(requests).length, 0);
+});
+
+// PR #710 MINOR-1: anyone with `deployments: write` can add a status to Vercel's record. Only a
+// status created by vercel[bot] (Bot) is trusted for readiness and host. Real 2026-11-26 shape:
+// creator { login: "vercel[bot]", id: 35613825, type: "Bot" } on success, failure and inactive.
+const realVercelStatusCreator = Object.freeze({ login: "vercel[bot]", id: 35613825, type: "Bot" });
+const statusBy = (creator, state, url) => ({ creator, state, ...(url ? { environment_url: url, target_url: url } : {}) });
+const exactHostUrl = "https://safe-preview.vercel.app";
+const attackerUrl = "https://attacker-preview.vercel.app";
+const spoofedVercelUser = Object.freeze({ login: "vercel[bot]", type: "User" });
+const untrustedCreators = Object.freeze({
+  "a user": ownerCreator,
+  "github-actions[bot]": actionsCreator,
+  "a vercel[bot] login with User type": spoofedVercelUser,
+  "no creator": undefined,
+});
+
+test("status creator: a success created by vercel[bot] (real payload shape) is accepted", async () => {
+  const source = environment();
+  const requests = [];
+  const result = await verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: [statusBy(realVercelStatusCreator, "success", exactHostUrl)] }, requests));
+  assert.equal(result.deploymentMatched, true);
+  assert.equal(result.ready, true);
+  assert.equal(result.host, "safe-preview.vercel.app");
+  assert.deepEqual(statusRequests(requests).map((request) => [request.pathname, request.searchParams.get("per_page")]), [[`${deploymentsPath}/42/statuses`, "10"]]);
+});
+
+test("status creator: statuses by anyone else are ignored while vercel[bot]'s own success decides", async () => {
+  const source = environment();
+  for (const [label, creator] of Object.entries(untrustedCreators)) {
+    const cases = {
+      "same-host success newest": [statusBy(creator, "success", exactHostUrl), statusBy(vercelCreator, "success", exactHostUrl)],
+      "failure newest": [statusBy(creator, "failure", attackerUrl), statusBy(vercelCreator, "success", exactHostUrl)],
+      "pending newest": [statusBy(creator, "pending"), statusBy(vercelCreator, "success", exactHostUrl)],
+      "same-host success under an inactive marker": [statusBy(vercelCreator, "inactive"), statusBy(creator, "success", exactHostUrl), statusBy(vercelCreator, "success", exactHostUrl)],
+    };
+    for (const [shape, statuses] of Object.entries(cases)) {
+      const result = await verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: statuses }, []));
+      assert.equal(result.deploymentMatched, true, `${label}: ${shape}`);
+      assert.equal(result.host, "safe-preview.vercel.app", `${label}: ${shape}`);
+    }
+  }
+});
+
+test("status creator: a success only from someone else never passes", async () => {
+  const source = environment();
+  for (const [label, creator] of Object.entries(untrustedCreators)) {
+    // Even pointing at the requested host, a non-Vercel success with no Vercel success is a steer attempt.
+    const steering = {
+      "only a non-Vercel exact-host success": [statusBy(creator, "success", exactHostUrl)],
+      "non-Vercel exact-host success over Vercel pending": [statusBy(creator, "success", exactHostUrl), statusBy(vercelCreator, "pending")],
+      "non-Vercel exact-host success over Vercel failure": [statusBy(creator, "success", exactHostUrl), statusBy(vercelCreator, "failure")],
+      "non-Vercel exact-host success under an inactive marker": [statusBy(vercelCreator, "inactive"), statusBy(creator, "success", exactHostUrl)],
+    };
+    for (const [shape, statuses] of Object.entries(steering)) {
+      await assert.rejects(
+        verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: statuses }, [])),
+        /^Error: GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED$/u,
+        `${label}: ${shape}`,
+      );
+    }
+    // A non-Vercel success that names no host steers nowhere, but it still never makes the record ready.
+    await assert.rejects(
+      verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: [statusBy(creator, "success")] }, [])),
+      /^Error: GITHUB_DEPLOYMENT_LINEAGE_MISMATCH$/u,
+      label,
+    );
+  }
+});
+
+test("status creator: a non-Vercel success with a different URL fails closed with a distinct reason", async () => {
+  const source = environment();
+  for (const [label, creator] of Object.entries(untrustedCreators)) {
+    const cases = {
+      // The MINOR-1 attack: newest success on Vercel's record points elsewhere.
+      "newest, over Vercel's exact-host success": [statusBy(creator, "success", attackerUrl), statusBy(vercelCreator, "success", exactHostUrl)],
+      // Order does not matter: anywhere on the page it is rejected.
+      "older than Vercel's exact-host success": [statusBy(vercelCreator, "success", exactHostUrl), statusBy(creator, "success", attackerUrl)],
+      "conflicting environment_url and target_url": [{ creator, state: "success", environment_url: exactHostUrl, target_url: attackerUrl }, statusBy(vercelCreator, "success", exactHostUrl)],
+      "non-Vercel host": [statusBy(creator, "success", "https://attacker.example.net"), statusBy(vercelCreator, "success", exactHostUrl)],
+      "under an inactive marker": [statusBy(vercelCreator, "inactive"), statusBy(creator, "success", attackerUrl), statusBy(vercelCreator, "success", exactHostUrl)],
+    };
+    for (const [shape, statuses] of Object.entries(cases)) {
+      await assert.rejects(
+        verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: statuses }, [])),
+        /^Error: GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED$/u,
+        `${label}: ${shape}`,
+      );
+    }
+    // The attacker's host as the requested input is rejected the same way, not matched.
+    await assert.rejects(
+      verifyDeployment({ ...source, CELEBRATEDEAL_DEPLOYMENT_HOST: "attacker-preview.vercel.app" }, fakeDeploymentsApi([vercelDeployment(42)], { 42: [statusBy(creator, "success", attackerUrl), statusBy(vercelCreator, "success", exactHostUrl)] }, [])),
+      /^Error: GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED$/u,
+      `${label}: attacker host requested`,
+    );
+  }
+  // A steering status on any Vercel record for the sha fails the whole gate, even when another record matches.
+  await assert.rejects(
+    verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(43), vercelDeployment(42)], {
+      43: [statusBy(ownerCreator, "success", attackerUrl), statusBy(vercelCreator, "success", "https://other-preview.vercel.app")],
+      42: exactHostSuccess,
+    }, [])),
+    /^Error: GITHUB_DEPLOYMENT_STATUS_CREATOR_UNTRUSTED$/u,
+  );
+});
+
+test("status creator: newest vercel[bot] status decides, inactive markers by anyone stay strict, and only one page is read", async () => {
+  const source = environment();
+  // The newest Vercel status wins; an older Vercel success beneath a newer Vercel failure is not used.
+  await assert.rejects(
+    verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: [statusBy(vercelCreator, "failure", exactHostUrl), statusBy(vercelCreator, "success", exactHostUrl)] }, [])),
+    /^Error: GITHUB_DEPLOYMENT_LINEAGE_MISMATCH$/u,
+  );
+  const newestSuccess = await verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: [statusBy(vercelCreator, "success", exactHostUrl), statusBy(vercelCreator, "failure", exactHostUrl)] }, []));
+  assert.equal(newestSuccess.deploymentMatched, true);
+  // Skipping a non-Vercel status does not reach past the newest Vercel status either.
+  await assert.rejects(
+    verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(42)], { 42: [statusBy(ownerCreator, "pending"), statusBy(vercelCreator, "error"), statusBy(vercelCreator, "success", exactHostUrl)] }, [])),
+    /^Error: GITHUB_DEPLOYMENT_LINEAGE_MISMATCH$/u,
+  );
+
+  // An inactive marker from anyone still triggers the newer-record check; ignoring it would loosen the gate.
+  for (const creator of Object.values(untrustedCreators)) {
+    await assert.rejects(
+      verifyDeployment(source, fakeDeploymentsApi([vercelDeployment(43), vercelDeployment(42)], {
+        43: [statusBy(vercelCreator, "success", "https://other-preview.vercel.app")],
+        42: [statusBy(creator, "inactive"), statusBy(vercelCreator, "success", exactHostUrl)],
+      }, [])),
+      /^Error: GITHUB_DEPLOYMENT_LINEAGE_MISMATCH$/u,
+    );
+  }
+
+  // GitHub returns statuses newest first and only the first page (10) is read. A Vercel success pushed
+  // off that page by other statuses is not found, so the gate fails closed and never reads page 2.
+  const pushedOff = [...Array.from({ length: 10 }, () => statusBy(ownerCreator, "pending")), statusBy(vercelCreator, "success", exactHostUrl)];
+  const requests = [];
+  const pagedStatuses = async (input) => {
+    const request = new URL(String(input));
+    if (request.pathname.endsWith("/statuses")) {
+      requests.push(request);
+      const perPage = Number(request.searchParams.get("per_page"));
+      const page = Number(request.searchParams.get("page") ?? "1");
+      return new Response(JSON.stringify(pushedOff.slice((page - 1) * perPage, page * perPage)), { status: 200, headers: { Link: `<https://api.github.com${request.pathname}?per_page=${perPage}&page=2>; rel="next"` } });
+    }
+    return fakeDeploymentsApi([vercelDeployment(42)], {}, [])(input);
+  };
+  await assert.rejects(verifyDeployment(source, pagedStatuses), /^Error: GITHUB_DEPLOYMENT_LINEAGE_MISMATCH$/u);
+  assert.deepEqual(requests.map((request) => [request.searchParams.get("per_page"), request.searchParams.get("page")]), [["10", null]]);
 });
 
 test("squash-merged sources require an exact protected migration tree", () => {
