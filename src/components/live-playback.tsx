@@ -532,7 +532,9 @@ function LiveBrandHeader({ live, runtimeState }: { live: LivePageData; runtimeSt
       : runtimeState === "replay"
         ? "精彩回放"
         // An evergreen session is a recording; never label it as a live broadcast.
-        : live.evergreen ? "預錄場次播放中" : getLiveStatusLabel(live.status);
+        // Otherwise follow the derived runtime state: a scheduled VOD keeps
+        // `live.status === "scheduled"` after it starts playing.
+        : live.evergreen ? "預錄場次播放中" : "直播中";
   return (
     <header className="relative z-10 flex items-center justify-between gap-3 p-4">
       <div className="flex min-w-0 items-center gap-3 rounded-full bg-black/35 px-3 py-2 backdrop-blur-md">
@@ -1524,6 +1526,7 @@ function LivePlaybackExperience({
             scheduledMessages={scheduledMessages}
             onAdmissionInvalid={onAdmissionInvalid}
             viewerProfile={viewerProfile}
+            started={getClientRuntimeState(live) !== "waiting"}
           />
         </div>
         {/* Evergreen sessions reveal offers per visitor; the server returns no ticker for them. */}
