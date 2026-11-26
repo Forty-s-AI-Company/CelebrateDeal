@@ -134,7 +134,7 @@ export function LiveDanmaku({ vendorId, liveId, enabled, videoRef }: { vendorId:
   return <aside className="danmaku-strip" aria-label="公開互動彈幕">
     <button type="button" className={buttonClass} aria-pressed={!hidden} onClick={toggle}>{hidden ? "顯示彈幕" : "隱藏彈幕"}</button>
     <div className="danmaku-lane" aria-live="off">
-      {!hidden && available && item ? <span key={item.id} className="danmaku-message">{item.source === "scripted_role" && <>{item.avatarUrl && <span aria-hidden="true" className="mr-1 inline-block h-6 w-6 rounded-full align-middle bg-cover" style={{ backgroundImage: `url("${item.avatarUrl}")` }} />}</>}{item.displayName}：{item.value}</span> : <span className="text-xs opacity-70">{hidden ? "已為你隱藏" : available ? "公開卡片回答與暖場角色會在這裡出現" : "全場彈幕尚未開啟或正在同步"}</span>}
+      {!hidden && available && item ? <span key={item.id} className="danmaku-message">{item.source === "scripted_role" && <>{item.avatarUrl && <span aria-hidden="true" className="mr-1 inline-block h-6 w-6 rounded-full align-middle bg-cover" style={{ backgroundImage: `url("${item.avatarUrl}")` }} />}</>}{item.displayName}：{item.value}</span> : <span className="text-xs opacity-70">{hidden ? "已為你隱藏" : available ? "公開卡片回答會在這裡出現" : "全場彈幕尚未開啟或正在同步"}</span>}
     </div>
   </aside>;
 }

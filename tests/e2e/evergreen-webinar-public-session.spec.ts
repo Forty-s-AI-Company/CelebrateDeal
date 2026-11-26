@@ -134,7 +134,7 @@ test("assigns a stable just-in-time session behind a waiting room without media"
   await expect(waitingRoom).toBeVisible();
   await expect(waitingRoom).toContainText("你的場次：");
   await expect(waitingRoom).toContainText("距離你的場次開始");
-  await expect(waitingRoom).toContainText("不是即時直播");
+  await expect(waitingRoom).not.toContainText("不是即時直播");
   await expect(page.locator("video")).toHaveCount(0);
   const cookie = await evergreenCookie(context);
   expect(cookie?.httpOnly).toBe(true);
@@ -160,8 +160,8 @@ test("plays an on-demand session from its own start, locked to normal speed", as
   // The room has chat, so the session video loads only after the nickname step.
   await enterLiveWithNickname(page);
   await expect(page.locator("video")).toHaveCount(1);
-  await expect(page.getByText("預錄場次播放中")).toBeVisible();
-  await expect(page.getByText("不是即時直播").first()).toBeVisible();
+  await expect(page.getByText("直播中", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("不是即時直播")).toHaveCount(0);
   const video = page.locator("video");
   await expect(video).not.toHaveAttribute("controls", /.*/u);
   await video.evaluate((element) => {
@@ -173,7 +173,7 @@ test("plays an on-demand session from its own start, locked to normal speed", as
 
   const cookie = await evergreenCookie(context);
   await page.reload();
-  await expect(page.getByText("預錄場次播放中")).toBeVisible();
+  await expect(page.getByText("直播中", { exact: true }).first()).toBeVisible();
   expect((await evergreenCookie(context))?.value).toBe(cookie?.value);
 });
 
@@ -226,7 +226,7 @@ test("assigns a recurring-daily visitor the next Asia/Taipei daily session behin
     await expect(waitingRoom).not.toContainText(`${later}（${TAIPEI}）`);
     // About two hours away: the countdown shows an hours component.
     await expect(waitingRoom).toContainText(/距離你的場次開始 1:\d{2}:\d{2}/u);
-    await expect(waitingRoom).toContainText("不是即時直播");
+    await expect(waitingRoom).not.toContainText("不是即時直播");
     await expect(page.locator("video")).toHaveCount(0);
 
     const cookie = await evergreenCookie(context);
@@ -341,7 +341,7 @@ test("opens playback for a recurring-daily session that has already started", as
   await page.goto(`/live/${fixture.dailyPlayingSlug}`);
   await enterLiveWithNickname(page);
   await expect(page.locator("video")).toHaveCount(1);
-  await expect(page.getByText("預錄場次播放中")).toBeVisible();
+  await expect(page.getByText("直播中", { exact: true }).first()).toBeVisible();
   await expect(page.getByTestId("live-waiting-room")).toHaveCount(0);
   const cookie = await evergreenCookie(context);
   expect(cookie?.httpOnly).toBe(true);
@@ -354,7 +354,7 @@ test("opens playback for a recurring-daily session that has already started", as
   expect(taipeiClock(0, new Date(session.sessionStartAt).getTime())).toBe(started);
 
   await page.reload();
-  await expect(page.getByText("預錄場次播放中")).toBeVisible();
+  await expect(page.getByText("直播中", { exact: true }).first()).toBeVisible();
   expect((await evergreenCookie(context))?.value).toBe(cookie?.value);
 });
 

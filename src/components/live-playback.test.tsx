@@ -1314,7 +1314,7 @@ describe("LivePlayback checkout", () => {
     let tree = renderLive({ interactionEvents });
     const ctaButton = findElements(
       tree,
-      (element) => element.type === "button" && element.props["aria-label"] === "商家預設腳本導購：立即了解",
+      (element) => element.type === "button" && element.props["aria-label"] === "立即了解",
     )[0];
     if (!ctaButton) throw new Error("Expected timed CTA button");
     await (ctaButton.props.onClick as () => Promise<void>)();
@@ -1415,7 +1415,7 @@ describe("LivePlayback checkout", () => {
     const pause = vi.fn();
     if (!video) throw new Error("Expected video element");
     (video.props.ref as { current: unknown }).current = { pause };
-    const cta = findElements(tree, (element) => element.props["aria-label"] === "商家預設腳本導購：查看外部活動")[0];
+    const cta = findElements(tree, (element) => element.props["aria-label"] === "查看外部活動")[0];
     await (cta?.props.onClick as () => Promise<void>)();
 
     tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
@@ -1428,7 +1428,7 @@ describe("LivePlayback checkout", () => {
     expect(trackClientAnalytics).not.toHaveBeenCalled();
 
     tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
-    await (findElements(tree, (element) => element.props["aria-label"] === "商家預設腳本導購：查看外部活動")[0]?.props.onClick as () => Promise<void>)();
+    await (findElements(tree, (element) => element.props["aria-label"] === "查看外部活動")[0]?.props.onClick as () => Promise<void>)();
     tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", interactionEvents });
     const confirmDialog = findElements(tree, (element) => typeof element.type === "function" && element.type.name === "ExternalNavigationConfirmDialog")[0];
     const confirm = confirmDialog?.props.onConfirm as () => Promise<void>;
@@ -1517,12 +1517,22 @@ describe("LivePlayback checkout", () => {
     const pageCopy = textContent(tree);
     const chatPanel = findElements(tree, (element) => element.type === LiveChatPanel)[0];
 
-    expect(pageCopy).toContain("部分互動為商家預先設定的腳本");
-    expect(pageCopy).toContain("不代表即時真人留言、真實購買或觀看人數");
-    expect(pageCopy).toContain("腳本推薦");
-    expect(pageCopy).toContain("商家腳本");
+    // D-47: viewers never see script / pre-recorded wording.
+    expect(pageCopy).not.toContain("部分互動為商家預先設定的腳本");
+    expect(pageCopy).not.toContain("不代表即時真人留言、真實購買或觀看人數");
+    expect(pageCopy).not.toContain("腳本");
+    expect(pageCopy).not.toContain("商家腳本");
+    expect(pageCopy).toContain("推薦商品");
     expect(chatPanel?.props.scheduledMessages).toEqual([expect.objectContaining({ id: "test-fixture-chat", source: "scheduled" })]);
     expect(chatPanel?.props.enabled).toBe(false);
+  });
+
+  it("shows no script or simulation disclosure when the live has no scripted events (D-47)", () => {
+    const pageCopy = textContent(renderLive({ interactionEvents: [], scheduledMessages: [] }));
+    expect(pageCopy).not.toContain("沒有商家預設互動腳本");
+    expect(pageCopy).not.toContain("不會模擬真人留言或購買行為");
+    expect(pageCopy).not.toContain("腳本");
+    expect(pageCopy).not.toContain("預錄");
   });
 
   it("does not expose products before a valid spotlight event and shows them at the trigger second", () => {
@@ -1660,14 +1670,14 @@ describe("LivePlayback checkout", () => {
     const pageCopy = textContent(renderLive({ interactionEvents }));
 
     expect(pageCopy).not.toContain("測試商品一");
-    expect(pageCopy).not.toContain("腳本推薦");
+    expect(pageCopy).not.toContain("推薦商品");
     expect(findElements(renderLive({ interactionEvents }), (element) => element.props["data-spotlight-state"] !== undefined)).toHaveLength(0);
   });
 
-  it("does not imply that a script will appear when the live has no interaction events", () => {
+  it("shows no script disclosure when the live has no interaction events", () => {
     const pageCopy = textContent(renderLive({ interactionEvents: [] }));
 
-    expect(pageCopy).toContain("目前沒有商家預設互動腳本");
+    expect(pageCopy).not.toContain("目前沒有商家預設互動腳本");
     expect(pageCopy).not.toContain("播放到指定秒數後，商家預先設定的互動腳本會出現在這裡");
     expect(findElements(renderLive({ interactionEvents: [] }), (element) => element.type === LiveChatPanel)[0]?.props.scheduledMessages).toEqual([]);
   });
@@ -1908,7 +1918,7 @@ describe("LivePlayback evergreen session", () => {
     expect(text).toContain("你的場次：");
     expect(text).toContain("（Asia/Taipei）");
     expect(text).toContain("距離你的場次開始 01:30");
-    expect(text).toContain("不是即時直播");
+    expect(text).not.toContain("不是即時直播");
     expect(findElements(tree, (element) => element.type === "video")).toHaveLength(0);
     await flushHookEffects();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -1949,8 +1959,10 @@ describe("LivePlayback evergreen session", () => {
     expect(video.props.controls).toBe(false);
     const header = findElements(tree, (element) => typeof element.type === "function" && element.type.name === "LiveBrandHeader")[0];
     if (!header) throw new Error("Expected brand header");
-    expect(textContent((header.type as (props: Record<string, unknown>) => unknown)(header.props))).toContain("預錄場次播放中");
-    expect(textContent(tree)).toContain("不是即時直播");
+    expect(textContent((header.type as (props: Record<string, unknown>) => unknown)(header.props))).toContain("直播中");
+    expect(textContent((header.type as (props: Record<string, unknown>) => unknown)(header.props))).not.toContain("預錄");
+    expect(textContent(tree)).not.toContain("不是即時直播");
+    expect(textContent(tree)).not.toContain("預先錄製");
 
     const media = { currentTime: 40, playbackRate: 1 };
     const target = { currentTarget: media as unknown as HTMLVideoElement };

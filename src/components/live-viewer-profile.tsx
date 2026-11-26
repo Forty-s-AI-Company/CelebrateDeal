@@ -210,19 +210,22 @@ function failedReadState(scope: string) {
 }
 
 /** A later read (admission renewal) never re-opens a gate the viewer was let through. */
-function keepsOpenRoom(previous: ProfileState, scope: string) {
-  return previous.scope === scope && (previous.status === "ready" || previous.status === "deferred");
+export function keepsOpenRoom(previous: ProfileState, scope: string) {
+  return previous.scope === scope && (previous.status === "ready" || previous.status === "deferred" || previous.status === "error");
 }
 
-function readyReadState(scope: string, profile: LiveViewerProfile | null, suggestedNickname: string | null) {
-  return (previous: ProfileState): ProfileState => (
-    !profile && previous.scope === scope && previous.status === "deferred"
-      ? { ...previous, suggestedNickname }
-      : { scope, status: "ready", profile, suggestedNickname }
-  );
+export function readyReadState(scope: string, profile: LiveViewerProfile | null, suggestedNickname: string | null) {
+  return (previous: ProfileState): ProfileState => {
+    if (profile || previous.scope !== scope) return { scope, status: "ready", profile, suggestedNickname };
+    // A viewer already let in (deferred, or a failed earlier read that failed open)
+    // is not sent back to the gate by a renewal read that finds no profile.
+    if (previous.status === "deferred") return { ...previous, suggestedNickname };
+    if (previous.status === "error") return { scope, status: "deferred", profile: null, suggestedNickname };
+    return { scope, status: "ready", profile, suggestedNickname };
+  };
 }
 
-type ProfileState = {
+export type ProfileState = {
   scope: string;
   status: LiveViewerProfileStatus;
   profile: LiveViewerProfile | null;
