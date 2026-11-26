@@ -406,6 +406,41 @@ describe("LiveViewerProfile moderation, limits and retention on PostgreSQL", () 
     expect(await db.liveViewerProfile.count({ where: { liveId: live.id } })).toBe(0);
   });
 
+  it("keeps a profile whose viewer posts while the purge runs, without failing the batch", async () => {
+    const { vendor, form, live } = await vendorWithLive("retention-race");
+    const scope = { vendorId: vendor.id, liveId: live.id };
+    const viewer = await verifiedViewer(form, live, "趕上的觀眾");
+    const { issuedProfileToken } = await save(scope, await admit(vendor.id, live.id), null, "最後一刻");
+    const profile = await db.liveViewerProfile.findFirstOrThrow({ where: { liveId: live.id } });
+    // Idle long enough for the 180-day rule.
+    const later = new Date(NOW.getTime() + 200 * 86_400_000);
+
+    // A post (message + lastActiveAt refresh) holds the profile row while the purge starts.
+    let holdingLock!: () => void;
+    const locked = new Promise<void>((resolve) => { holdingLock = resolve; });
+    let releasePost!: () => void;
+    const released = new Promise<void>((resolve) => { releasePost = resolve; });
+    const posting = db.$transaction(async (tx) => {
+      await tx.liveViewerProfile.update({ where: { id: profile.id }, data: { lastActiveAt: later } });
+      await tx.liveChatMessage.create({
+        data: { vendorId: vendor.id, liveId: live.id, formSubmissionId: viewer.submission.id, authorName: "趕上的觀眾", body: "我還在", viewerProfileId: profile.id },
+      });
+      holdingLock();
+      await released;
+    }, { timeout: 20_000 });
+    await locked;
+    const purging = purgeExpiredData(db, { now: later, policy: dataRetentionPolicy({}) });
+    setTimeout(() => releasePost(), 500);
+
+    await posting;
+    await expect(purging).resolves.toMatchObject({ remaining: false });
+    expect(await db.liveViewerProfile.count({ where: { id: profile.id } })).toBe(1);
+    const messages = await db.liveChatMessage.findMany({ where: { liveId: live.id } });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ viewerProfileId: profile.id, viewerProfileRemovedAt: null });
+    expect(issuedProfileToken).toBeTruthy();
+  });
+
   it("deletes an evergreen live's profiles only after 180 idle days", async () => {
     const { vendor, live } = await vendorWithLive("retention-evergreen");
     const scope = { vendorId: vendor.id, liveId: live.id };

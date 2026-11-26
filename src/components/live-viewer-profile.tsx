@@ -26,8 +26,14 @@ export type LiveViewerProfile = {
 /**
  * `unavailable`: the vendor's blacklist covers this viewer. They still watch;
  * there is no nickname step and the chat stays read-only.
+ * `deferred`: saving at the gate failed for a reason the viewer cannot fix by
+ * renaming (rate limit, server or network error). They still watch, the chat
+ * uses the registration name, and the nickname can be set later from the chat.
  */
-export type LiveViewerProfileStatus = "idle" | "loading" | "ready" | "error" | "unavailable";
+export type LiveViewerProfileStatus = "idle" | "loading" | "ready" | "error" | "unavailable" | "deferred";
+
+/** Statuses in which the room never waits for a nickname. */
+const OPEN_STATUSES: ReadonlySet<LiveViewerProfileStatus> = new Set(["error", "unavailable", "deferred"]);
 
 export type LiveViewerProfileSaveResult = { ok: true } | { ok: false; message: string };
 
@@ -56,13 +62,13 @@ export function liveViewerProfileGateRequired(input: {
   hasProfile: boolean;
 }) {
   if (!input.enabled || input.runtimeState !== "playing") return false;
-  if (input.status === "error" || input.status === "unavailable") return false;
+  if (OPEN_STATUSES.has(input.status)) return false;
   return !input.hasProfile;
 }
 
-/** Posting asks for a nickname whenever the room uses them and the read worked. */
+/** Posting asks for a nickname whenever the room uses them and the read and saves worked. */
 export function liveViewerProfileRequiredForChat(input: { enabled: boolean; status: LiveViewerProfileStatus }) {
-  return input.enabled && input.status !== "error" && input.status !== "unavailable";
+  return input.enabled && !OPEN_STATUSES.has(input.status);
 }
 
 /** A slow profile read must not hold the room: after this it counts as failed (fail open). */
@@ -127,23 +133,71 @@ export async function fetchLiveViewerProfile(input: {
 }
 
 const SAVE_FAILED_MESSAGE = "暫時無法儲存，請稍後再試";
+/** A save that hangs must not hold the gate either. */
+export const LIVE_VIEWER_PROFILE_SAVE_TIMEOUT_MS = 10_000;
+
+export type LiveViewerProfileSaveOutcome =
+  | { kind: "saved"; profile: LiveViewerProfile }
+  | { kind: "unavailable" }
+  /** 400 (name not allowed) or 409 (name taken): the viewer fixes it by renaming. */
+  | { kind: "invalid"; message: string }
+  /** Anything else, network errors and timeouts included: not the viewer's to fix. */
+  | { kind: "failed"; message: string };
 
 /**
  * What a nickname PUT means for the room. A 403 `blocked` (the vendor's
  * blacklist) is not an error to show: the nickname step closes and the
- * viewer keeps watching with a read-only chat.
+ * viewer keeps watching with a read-only chat. `status` null = no response.
  */
-export function liveViewerProfileSaveOutcome(status: number, payload: unknown):
-  | { kind: "saved"; profile: LiveViewerProfile }
-  | { kind: "unavailable" }
-  | { kind: "failed"; message: string } {
+export function liveViewerProfileSaveOutcome(status: number | null, payload: unknown): LiveViewerProfileSaveOutcome {
+  if (status === null) return { kind: "failed", message: SAVE_FAILED_MESSAGE };
   if (status === 403 && isObject(payload) && payload.error === "blocked") return { kind: "unavailable" };
   if (status < 200 || status >= 300) {
     const message = isObject(payload) && typeof payload.message === "string" ? payload.message : null;
+    if (status === 400 || status === 409) return { kind: "invalid", message: message ?? SAVE_FAILED_MESSAGE };
     return { kind: "failed", message: message ?? (status === 429 ? "操作太頻繁，請稍後再試" : SAVE_FAILED_MESSAGE) };
   }
   const profile = isObject(payload) ? parseLiveViewerProfile(payload.profile) : null;
   return profile ? { kind: "saved", profile } : { kind: "failed", message: SAVE_FAILED_MESSAGE };
+}
+
+/**
+ * The status a save leaves the room in, or null to stay in the dialog with
+ * the message. At the gate (`failOpen`) only a fixable name (400/409) keeps
+ * the dialog open; any other failure lets the viewer in so a shared IP, a
+ * rate limit or an outage never keeps a viewer from watching.
+ */
+export function liveViewerProfileStatusAfterSave(outcome: LiveViewerProfileSaveOutcome, failOpen: boolean): LiveViewerProfileStatus | null {
+  if (outcome.kind === "saved") return "ready";
+  if (outcome.kind === "unavailable") return "unavailable";
+  if (outcome.kind === "failed" && failOpen) return "deferred";
+  return null;
+}
+
+/** PUTs the nickname; a network error, an abort or the timeout is a `failed` outcome. */
+export async function putLiveViewerProfile(input: {
+  vendorId: string;
+  liveId: string;
+  nickname: string;
+  avatarSeed: string;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<LiveViewerProfileSaveOutcome> {
+  let abort: ReturnType<typeof abortAfter> | null = null;
+  try {
+    abort = abortAfter(input.timeoutMs ?? LIVE_VIEWER_PROFILE_SAVE_TIMEOUT_MS);
+    const response = await (input.fetchImpl ?? fetch)(LIVE_VIEWER_PROFILE_ENDPOINT, {
+      method: "PUT",
+      headers: CLIENT_HEADERS,
+      body: JSON.stringify({ vendorId: input.vendorId, liveId: input.liveId, nickname: input.nickname, avatarSeed: input.avatarSeed }),
+      signal: abort.signal,
+    });
+    return liveViewerProfileSaveOutcome(response.status, await response.json().catch(() => null));
+  } catch {
+    return liveViewerProfileSaveOutcome(null, null);
+  } finally {
+    abort?.dispose();
+  }
 }
 
 function emptyProfileState(scope: string, status: LiveViewerProfileStatus): ProfileState {
@@ -153,6 +207,19 @@ function emptyProfileState(scope: string, status: LiveViewerProfileStatus): Prof
 /** Keeps a profile already read when a later read fails; otherwise fails open. */
 function failedReadState(scope: string) {
   return (previous: ProfileState) => previous.scope === scope && previous.status === "ready" ? previous : emptyProfileState(scope, "error");
+}
+
+/** A later read (admission renewal) never re-opens a gate the viewer was let through. */
+function keepsOpenRoom(previous: ProfileState, scope: string) {
+  return previous.scope === scope && (previous.status === "ready" || previous.status === "deferred");
+}
+
+function readyReadState(scope: string, profile: LiveViewerProfile | null, suggestedNickname: string | null) {
+  return (previous: ProfileState): ProfileState => (
+    !profile && previous.scope === scope && previous.status === "deferred"
+      ? { ...previous, suggestedNickname }
+      : { scope, status: "ready", profile, suggestedNickname }
+  );
 }
 
 type ProfileState = {
@@ -172,14 +239,14 @@ export function useLiveViewerProfile({ vendorId, liveId, enabled }: { vendorId: 
     let disposed = false;
     const controller = new AbortController();
     queueMicrotask(() => {
-      if (!disposed) setState((previous) => previous.scope === scope && previous.status === "ready" ? previous : emptyProfileState(scope, "loading"));
+      if (!disposed) setState((previous) => keepsOpenRoom(previous, scope) ? previous : emptyProfileState(scope, "loading"));
     });
     fetchLiveViewerProfile({ vendorId, liveId, signal: controller.signal })
       .then((result) => {
         if (disposed) return;
         if (result.status === "error") return setState(failedReadState(scope));
         if (result.status === "unavailable") return setState(emptyProfileState(scope, "unavailable"));
-        setState({ scope, status: "ready", profile: result.profile, suggestedNickname: result.suggestedNickname });
+        setState(readyReadState(scope, result.profile, result.suggestedNickname));
       })
       // Never leave the room waiting on a read that threw: fail open.
       .catch(() => {
@@ -192,23 +259,18 @@ export function useLiveViewerProfile({ vendorId, liveId, enabled }: { vendorId: 
   }, [enabled, liveId, scope, vendorId]);
 
   // useMemo (not useCallback) keeps this hook to the hooks LivePlayback already uses.
-  const save = useMemo(() => async (nickname: string, avatarSeed: string): Promise<LiveViewerProfileSaveResult> => {
-    try {
-      const response = await fetch(LIVE_VIEWER_PROFILE_ENDPOINT, {
-        method: "PUT",
-        headers: CLIENT_HEADERS,
-        body: JSON.stringify({ vendorId, liveId, nickname, avatarSeed }),
-      });
-      const outcome = liveViewerProfileSaveOutcome(response.status, await response.json().catch(() => null));
-      if (outcome.kind === "failed") return { ok: false, message: outcome.message };
-      // Blacklisted: close the nickname step and keep watching, read-only chat.
-      setState(outcome.kind === "unavailable"
-        ? emptyProfileState(scope, "unavailable")
-        : { scope, status: "ready", profile: outcome.profile, suggestedNickname: null });
-      return { ok: true };
-    } catch {
-      return { ok: false, message: "暫時無法儲存，請稍後再試" };
-    }
+  const save = useMemo(() => async (
+    nickname: string,
+    avatarSeed: string,
+    options: { failOpen?: boolean } = {},
+  ): Promise<LiveViewerProfileSaveResult> => {
+    const outcome = await putLiveViewerProfile({ vendorId, liveId, nickname, avatarSeed });
+    const next = liveViewerProfileStatusAfterSave(outcome, options.failOpen === true);
+    if (next === null) return { ok: false, message: outcome.kind === "saved" || outcome.kind === "unavailable" ? SAVE_FAILED_MESSAGE : outcome.message };
+    if (next === "ready" && outcome.kind === "saved") setState({ scope, status: "ready", profile: outcome.profile, suggestedNickname: null });
+    // Blacklisted, or a failure the viewer cannot fix: close the gate, keep watching.
+    else setState((previous) => ({ ...emptyProfileState(scope, next), suggestedNickname: previous.scope === scope ? previous.suggestedNickname : null }));
+    return { ok: true };
   }, [liveId, scope, vendorId]);
 
   return { status: current.status, profile: current.profile, suggestedNickname: current.suggestedNickname, save };
@@ -268,7 +330,8 @@ export function useLiveViewerProfileGate(input: {
         hasProfile: Boolean(viewerProfile.profile),
         initialNickname: viewerProfile.profile?.nickname ?? viewerProfile.suggestedNickname ?? "",
         initialAvatarSeed: viewerProfile.profile?.avatarSeed ?? null,
-        onSave: viewerProfile.save,
+        // At the gate, failures the viewer cannot fix by renaming let them in.
+        onSave: (nickname: string, avatarSeed: string) => viewerProfile.save(nickname, avatarSeed, { failOpen: gateOpen }),
         onClose: gateOpen ? undefined : () => setEditorOpen(false),
       }
     : null;

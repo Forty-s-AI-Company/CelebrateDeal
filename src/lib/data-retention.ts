@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { reconcileLiveRuntimeState, type LiveRuntimeDatabase } from "@/lib/live-runtime-state";
+import { captureOperationalError } from "@/lib/monitoring";
 
 /**
  * F-070 / B04-17: bounded retention sweep for operational data that has no
@@ -161,40 +162,61 @@ export async function purgeExpiredData(
   const profileCutoff = cutoff(LIVE_VIEWER_PROFILE_RETENTION_DAYS);
   const idleCutoff = cutoff(LIVE_VIEWER_PROFILE_IDLE_DAYS);
   // A scheduled VOD only gets its persisted end when someone loads it after
-  // it finished; settle that from the shared runtime rules first.
+  // it finished; settle that from the shared runtime rules first, oldest idle
+  // profiles first. One live failing is logged and skipped, never the sweep.
   const unsettled = await db.$queryRaw<Array<{ vendorId: string; liveId: string }>>`
-    SELECT DISTINCT "live"."vendorId", "live"."id" AS "liveId"
+    SELECT "live"."vendorId", "live"."id" AS "liveId"
       FROM "LiveViewerProfile" "profile"
       JOIN "Live" "live" ON "live"."vendorId" = "profile"."vendorId" AND "live"."id" = "profile"."liveId"
      WHERE "profile"."lastActiveAt" < ${profileCutoff}
        AND "live"."endedAt" IS NULL
        AND "live"."streamMode" = 'vod'
+       AND "live"."videoId" IS NOT NULL
        AND "live"."isEvergreen" = false
+     GROUP BY "live"."vendorId", "live"."id"
+     ORDER BY MIN("profile"."lastActiveAt") ASC, "live"."id" ASC
      LIMIT ${LIVE_RECONCILE_LIMIT}`;
   for (const live of unsettled) {
-    await reconcileLiveRuntimeState(db, { vendorId: live.vendorId, liveId: live.liveId, now });
+    try {
+      await reconcileLiveRuntimeState(db, { vendorId: live.vendorId, liveId: live.liveId, now });
+    } catch (error) {
+      captureOperationalError(error, { source: "data_retention", operation: "live_viewer_profile_reconcile" }, { level: "warning" });
+    }
   }
-  const profiles = await drain(() => db.$executeRaw`
-    WITH "doomed" AS (
-      SELECT "profile"."id"
-        FROM "LiveViewerProfile" "profile"
-        JOIN "Live" "live" ON "live"."vendorId" = "profile"."vendorId" AND "live"."id" = "profile"."liveId"
-       WHERE "profile"."lastActiveAt" < ${idleCutoff}
-          OR ("profile"."lastActiveAt" < ${profileCutoff}
-              AND "live"."endedAt" IS NOT NULL
-              AND "live"."endedAt" < ${profileCutoff}
-              AND ("live"."replayEnabled" = false
-                   OR ("live"."replayAvailableUntil" IS NOT NULL AND "live"."replayAvailableUntil" < ${profileCutoff})))
-       ORDER BY "profile"."id"
-       LIMIT ${batchSize}
-    ), "detached" AS (
-      UPDATE "LiveChatMessage"
-         SET "viewerProfileId" = NULL,
-             "viewerProfileRemovedAt" = ${now}
-       WHERE "viewerProfileId" IN (SELECT "id" FROM "doomed")
-    )
-    DELETE FROM "LiveViewerProfile"
-     WHERE "id" IN (SELECT "id" FROM "doomed")`, batchSize, maxBatches);
+  // Delete first and detach only what was deleted, in one statement (the
+  // NO ACTION foreign key is checked at its end). The DELETE repeats the
+  // idle conditions: a viewer who posts while this runs refreshes
+  // lastActiveAt in the same transaction as the message, so after waiting
+  // for that row lock PostgreSQL re-checks the new row version and keeps the
+  // profile instead of failing the batch on the new message's foreign key.
+  const profiles = await drain(async () => {
+    const [row] = await db.$queryRaw<Array<{ count: number }>>`
+      WITH "doomed" AS (
+        SELECT "profile"."id"
+          FROM "LiveViewerProfile" "profile"
+          JOIN "Live" "live" ON "live"."vendorId" = "profile"."vendorId" AND "live"."id" = "profile"."liveId"
+         WHERE "profile"."lastActiveAt" < ${idleCutoff}
+            OR ("profile"."lastActiveAt" < ${profileCutoff}
+                AND "live"."endedAt" IS NOT NULL
+                AND "live"."endedAt" < ${profileCutoff}
+                AND ("live"."replayEnabled" = false
+                     OR ("live"."replayAvailableUntil" IS NOT NULL AND "live"."replayAvailableUntil" < ${profileCutoff})))
+         ORDER BY "profile"."id"
+         LIMIT ${batchSize}
+      ), "deleted" AS (
+        DELETE FROM "LiveViewerProfile"
+         WHERE "id" IN (SELECT "id" FROM "doomed")
+           AND "lastActiveAt" < ${profileCutoff}
+        RETURNING "id"
+      ), "detached" AS (
+        UPDATE "LiveChatMessage"
+           SET "viewerProfileId" = NULL,
+               "viewerProfileRemovedAt" = ${now}
+         WHERE "viewerProfileId" IN (SELECT "id" FROM "deleted")
+      )
+      SELECT COUNT(*)::int AS "count" FROM "deleted"`;
+    return row?.count ?? 0;
+  }, batchSize, maxBatches);
 
   return {
     webhookPayloadsPurged: webhook.total,

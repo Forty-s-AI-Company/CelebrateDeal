@@ -34,8 +34,8 @@ const READ_IP_LIMIT = 600;
 const WRITE_IP_LIMIT = 300;
 /** Per viewer (verified pass) each minute. */
 const WRITE_VIEWER_LIMIT = 10;
-/** New profiles per source IP and live each hour (on top of 3 per admission session). */
-const CREATE_IP_LIVE_LIMIT = 10;
+/** New profiles per source IP and live each hour (on top of 3 per admission session); a classroom or CGNAT address fits. */
+const CREATE_IP_LIVE_LIMIT = 300;
 const CREATE_IP_LIVE_WINDOW_MS = 60 * 60 * 1_000;
 
 const ERROR_STATUS: Record<LiveViewerProfileError["code"], number> = {

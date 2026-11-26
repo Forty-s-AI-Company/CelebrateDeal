@@ -206,7 +206,7 @@ describe("PUT /api/live-viewer-profile", () => {
     const response = await PUT(putRequest(body));
     expect(response.status).toBe(429);
     expect(await response.json()).toMatchObject({ error: "too_many_profiles" });
-    expect(rateLimit.checkRateLimit).toHaveBeenCalledWith(expect.any(Request), "live-viewer-profile-create:live-1", 10, 3_600_000);
+    expect(rateLimit.checkRateLimit).toHaveBeenCalledWith(expect.any(Request), "live-viewer-profile-create:live-1", 300, 3_600_000);
     expect(db.liveViewerProfile.upsert).not.toHaveBeenCalled();
 
     db.liveViewerProfile.findUnique.mockResolvedValue({ id: "profile-1" });

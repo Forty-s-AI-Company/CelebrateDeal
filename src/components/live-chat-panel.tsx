@@ -185,6 +185,15 @@ function ComposerNotice({
           </button>
         </div>
       ) : null}
+      {!ownProfile && viewerProfile && !viewerProfile.required ? (
+        // The gate let the viewer in without a nickname (a save failed): offer it again here.
+        <div className="mb-2 flex items-center justify-between gap-2 text-xs text-white/70">
+          <span>可以之後再設定暱稱與頭像。</span>
+          <button type="button" onClick={viewerProfile.onEdit} className="min-h-11 shrink-0 rounded-lg px-2 font-bold text-white underline underline-offset-2 hover:text-white/85">
+            設定暱稱
+          </button>
+        </div>
+      ) : null}
     </>
   );
 }

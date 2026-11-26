@@ -16,6 +16,8 @@ import {
   LiveViewerProfileDialog,
   LiveViewerProfileLayer,
   liveViewerProfileSaveOutcome,
+  liveViewerProfileStatusAfterSave,
+  putLiveViewerProfile,
   parseLiveViewerProfile,
   useLiveViewerProfileGate,
 } from "./live-viewer-profile";
@@ -176,13 +178,55 @@ describe("profile read", () => {
     expect(liveViewerProfileSaveOutcome(403, { error: "access_denied", message: "直播連線已失效，請重新進入直播間" }))
       .toEqual({ kind: "failed", message: "直播連線已失效，請重新進入直播間" });
     expect(liveViewerProfileSaveOutcome(409, { error: "nickname_taken", message: "這個名稱已經有人使用，請換一個" }))
-      .toEqual({ kind: "failed", message: "這個名稱已經有人使用，請換一個" });
+      .toEqual({ kind: "invalid", message: "這個名稱已經有人使用，請換一個" });
     expect(liveViewerProfileSaveOutcome(429, null)).toEqual({ kind: "failed", message: "操作太頻繁，請稍後再試" });
     const url = interactionRoleAvatarUrl("host-blue");
     expect(liveViewerProfileSaveOutcome(200, { profile: { nickname: "小明", avatarSeed: "host-blue", avatarUrl: url } }))
       .toEqual({ kind: "saved", profile: { nickname: "小明", avatarSeed: "host-blue", avatarUrl: url } });
     expect(liveViewerProfileSaveOutcome(200, { profile: { nickname: "小明", avatarSeed: "x", avatarUrl: "https://evil.example/a.png" } }))
       .toEqual({ kind: "failed", message: "暫時無法儲存，請稍後再試" });
+  });
+
+  it("lets the viewer in from the gate on 429, 503, 500, a network error or a timeout", async () => {
+    const respond = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+    const cases: Array<[string, typeof fetch]> = [
+      ["429 too_many_profiles", respond(429, { error: "too_many_profiles", message: "操作太頻繁，請稍後再試" })],
+      ["429 rate limit", respond(429, { error: "Too many requests" })],
+      ["503 provider outage", respond(503, { error: "Rate limit unavailable" })],
+      ["500 server error", respond(500, { error: "Unable to save the nickname" })],
+      ["network error", (async () => { throw new TypeError("Failed to fetch"); }) as unknown as typeof fetch],
+    ];
+    for (const [label, fetchImpl] of cases) {
+      const outcome = await putLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", nickname: "小明", avatarSeed: "host-blue", fetchImpl });
+      expect(outcome.kind, label).toBe("failed");
+      const status = liveViewerProfileStatusAfterSave(outcome, true);
+      expect(status, label).toBe("deferred");
+      // Deferred: the gate is closed and playback is admitted; posting does not wait for a nickname.
+      expect(liveViewerProfileGateRequired({ enabled: true, runtimeState: "playing", status: status!, hasProfile: false }), label).toBe(false);
+      expect(liveViewerProfileRequiredForChat({ enabled: true, status: status! }), label).toBe(false);
+    }
+    const timedOut = await putLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", nickname: "小明", avatarSeed: "host-blue", timeoutMs: 30, fetchImpl: hangingFetch });
+    expect(liveViewerProfileStatusAfterSave(timedOut, true)).toBe("deferred");
+  });
+
+  it("keeps the gate open with the message on 400 and 409, which the viewer fixes by renaming", async () => {
+    for (const [status, body] of [
+      [400, { error: "invalid_nickname", message: "暱稱不能包含網址" }],
+      [400, { error: "nickname_blocked", message: "這個名稱無法使用，請換一個" }],
+      [409, { error: "nickname_taken", message: "這個名稱已經有人使用，請換一個" }],
+    ] as const) {
+      const fetchImpl = (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+      const outcome = await putLiveViewerProfile({ vendorId: "vendor-1", liveId: "live-1", nickname: "x", avatarSeed: "host-blue", fetchImpl });
+      expect(outcome).toEqual({ kind: "invalid", message: body.message });
+      expect(liveViewerProfileStatusAfterSave(outcome, true)).toBeNull();
+    }
+  });
+
+  it("outside the gate (editing from the chat) shows failures instead of closing anything", () => {
+    expect(liveViewerProfileStatusAfterSave({ kind: "failed", message: "操作太頻繁，請稍後再試" }, false)).toBeNull();
+    expect(liveViewerProfileStatusAfterSave({ kind: "unavailable" }, false)).toBe("unavailable");
+    const profile = { nickname: "小明", avatarSeed: "host-blue", avatarUrl: interactionRoleAvatarUrl("host-blue") };
+    expect(liveViewerProfileStatusAfterSave({ kind: "saved", profile }, false)).toBe("ready");
   });
 
   it("stops when the caller aborts", async () => {
@@ -266,6 +310,16 @@ describe("chat panel with nicknames", () => {
     expect(html).toContain("<svg");
     expect(html).toContain("以「阿明」留言");
     expect(html).toContain("更改");
+  });
+
+  it("offers setting the nickname later from the chat after the gate let the viewer in", () => {
+    const html = renderToStaticMarkup(
+      <LiveChatPanel enabled admissionStatus="admitted" vendorId="vendor-1" liveId="live-1" scheduledMessages={[]}
+        viewerProfile={{ required: false, profile: null, onEdit: () => undefined }} />,
+    );
+    expect(html).toContain("可以之後再設定暱稱與頭像");
+    expect(html).toContain("設定暱稱");
+    expect(isNicknameMissing({ required: false, profile: null, onEdit: () => undefined })).toBe(false);
   });
 
   it("keeps the composer closed while a required nickname is missing", () => {

@@ -315,7 +315,8 @@ describe("saveLiveViewerProfile moderation and limits", () => {
       .rejects.toMatchObject({ code: "nickname_taken" });
     const [strings, ...values] = database.$queryRaw.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
     const sql = strings.join("?");
-    expect(sql).toMatch(/SELECT DISTINCT "authorName"/u);
+    expect(sql).toMatch(/SELECT "authorName"[\s\S]*GROUP BY "authorName"/u);
+    expect(sql).toMatch(/ORDER BY MAX\("createdAt"\) DESC, "authorName" ASC/u);
     expect(sql).toMatch(/"viewerProfileId" IS NULL/u);
     expect(sql).toMatch(/"viewerProfileRemovedAt" IS NULL/u);
     expect(sql).toMatch(/LIMIT \?$/u);

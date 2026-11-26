@@ -344,7 +344,7 @@ export async function reservedLiveViewerNicknameKeys(
     ? Prisma.sql`AND ("formSubmissionId" IS NULL OR "formSubmissionId" <> ${options.ownSubmissionId})`
     : Prisma.empty;
   const authors = await database.$queryRaw<Array<{ authorName: string }>>`
-    SELECT DISTINCT "authorName"
+    SELECT "authorName"
       FROM "LiveChatMessage"
      WHERE "vendorId" = ${scope.vendorId}
        AND "liveId" = ${scope.liveId}
@@ -353,6 +353,10 @@ export async function reservedLiveViewerNicknameKeys(
        AND "viewerProfileRemovedAt" IS NULL
        AND "createdAt" >= ${since}
        ${ownSubmission}
+     GROUP BY "authorName"
+     -- Distinct names, most recently active first, so a cut-off keeps the
+     -- names people are most likely to see in the room.
+     ORDER BY MAX("createdAt") DESC, "authorName" ASC
      LIMIT ${RECENT_AUTHOR_SCAN_LIMIT}`;
   const names = [
     ...RESERVED_NICKNAMES,
