@@ -127,4 +127,16 @@ describe("LiveChatPanel message contracts", () => {
     );
     expect(html).toContain("品牌顧問");
   });
+
+  it("uses a neutral empty state once the session has started", () => {
+    const waiting = renderToStaticMarkup(
+      <LiveChatPanel enabled admissionStatus="admitted" vendorId="vendor-1" liveId="live-1" scheduledMessages={[]} />,
+    );
+    const started = renderToStaticMarkup(
+      <LiveChatPanel enabled admissionStatus="admitted" vendorId="vendor-1" liveId="live-1" scheduledMessages={[]} started />,
+    );
+    expect(waiting).toContain("直播開始後，留言會顯示在這裡。");
+    expect(started).not.toContain("直播開始後");
+    expect(started).toContain("目前還沒有留言。");
+  });
 });

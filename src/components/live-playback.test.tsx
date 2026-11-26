@@ -1219,6 +1219,18 @@ describe("LivePlayback checkout", () => {
     expect(getLiveStatusLabel(status)).toBe(label);
   });
 
+  it.each([
+    ["scheduled VOD already playing", { status: "scheduled", runtimeState: "playing" as const }, "直播中"],
+    ["live input playing", { status: "live", runtimeState: "playing" as const }, "直播中"],
+    ["replay", { status: "ended", runtimeState: "replay" as const }, "精彩回放"],
+    ["waiting", { status: "scheduled", runtimeState: "waiting" as const }, "即將直播"],
+  ])("brand header label follows the runtime state: %s", (_name, overrides, label) => {
+    const tree = renderLive(overrides);
+    const header = findElements(tree, (element) => typeof element.type === "function" && element.type.name === "LiveBrandHeader")[0];
+    if (!header) throw new Error("Expected brand header");
+    expect(textContent((header.type as (props: Record<string, unknown>) => unknown)(header.props))).toContain(label);
+  });
+
   it("only points aria-controls at the panel that currently exists", () => {
     const navigation = PlaybackNavigation({ panel: "chat", onPanelChange: vi.fn() });
     const inactiveButtons = findElements(navigation, (element) => element.type === "button");
