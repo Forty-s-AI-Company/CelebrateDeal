@@ -34,6 +34,8 @@ export type LiveChatPanelProps = {
   liveId: string;
   scheduledMessages: ScheduledRuntimeMessage[];
   onAdmissionInvalid?: () => void;
+  /** True once the session has started (playing or replay); changes only the empty-state copy. */
+  started?: boolean;
 };
 
 type ChatListPayload = {
@@ -92,6 +94,10 @@ export function postErrorMessage(status: number | "keyword" | "rate_limited" | "
   return "留言無法送出，內容仍為你保留。";
 }
 
+function chatEmptyText(started: boolean | undefined) {
+  return started ? "目前還沒有留言。" : "直播開始後，留言會顯示在這裡。";
+}
+
 export function LiveChatPanel(props: LiveChatPanelProps) {
   // A live identity change must create a fresh state boundary. This prevents
   // messages, permissions, drafts, and late async work from crossing sessions.
@@ -105,6 +111,7 @@ function LiveChatSession({
   liveId,
   scheduledMessages,
   onAdmissionInvalid,
+  started,
 }: LiveChatPanelProps) {
   const [viewerMessages, setViewerMessages] = useState<ViewerRuntimeMessage[]>([]);
   const [viewer, setViewer] = useState<ViewerState>({ canPost: false, displayName: null, reason: "verification_required" });
@@ -238,7 +245,7 @@ function LiveChatSession({
         className="min-h-[13rem] flex-1 space-y-3 overflow-y-auto px-4 py-4"
       >
         {visibleScheduledMessages.length === 0 && viewerMessages.length === 0 && !pending ? (
-          <p className="py-8 text-center text-sm text-white/55">直播開始後，留言會顯示在這裡。</p>
+          <p className="py-8 text-center text-sm text-white/55">{chatEmptyText(started)}</p>
         ) : null}
 
         {visibleScheduledMessages.map((message) => (
