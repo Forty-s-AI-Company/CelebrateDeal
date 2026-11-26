@@ -75,6 +75,7 @@
 > 2026-11-12 依程式現況更新（D-44 原文保留）：常青場排程已接線（請求當下依伺服器時間計算場次，`src/lib/evergreen-viewer-session.ts`、`src/lib/evergreen-activation.ts`；#505、#507、#520）；課程已有 `courses` 功能開關與伺服器端檢查（#465，`src/lib/feature-gates.ts`）；A/B 測試要分兩種——`src/lib/ab-testing.ts` 仍未被正式程式呼叫，但漏斗的分流實驗已接線（`src/lib/funnel-runtime.ts`、`funnel-operations-service.ts`）；AI 漏斗助理（`src/lib/ai-funnel-assistant.ts`）與互動卡片媒體仍只被各自的測試引用（`src/lib/ai-funnel-assistant.test.ts`、`src/lib/interaction-card-timeline.test.ts`），未接線。細節與依據見 `docs/ROADMAP-v2.md` 的「現況更新」。
 | D-45 | 公開價格頁與方案定價 | **A：依回顧訪談第 8 題的價格帶，在公開上線前發布透明價格頁**；方案內含觀看分鐘額度、超量另計 | 透明定價是對幫賣的差異點；常青場是唯一會隨使用量線性放大的成本 | 公開上線前 | 市場報告 billing 列與單位成本模型 |
 | D-46 | 何時、以什麼條件正式上 Production | **A：L2 完成、律師與會計師確認、備份與 migration 流程演練後**，另行授權 | Production 部署與正式付款依規則都需 owner 另外授權 | 封測回顧後 | AGENTS.md；ROADMAP §3.4 |
+| D-47 | 觀眾端的「預錄／腳本」標示（2026-11-26 owner 已決定） | **owner 決定：全部拿掉，比照幫賣，讓觀眾看不出是預錄或腳本**：常青場標籤「預錄場次播放中」改為「直播中」；移除聊天上方的揭露句（「部分互動為商家預先設定的腳本…」／「目前沒有商家預設互動腳本…」）；移除腳本導購按鈕上的「商家腳本」小標 | 擴大 D-26 的不標示版：把預錄內容與腳本互動呈現為即時直播，有被認定公平交易法第 21 條「引人錯誤」的風險（市場研究 `c07_ai_trends_and_disclosure.md` 第 5 點建議不要這樣做）；風險由封測協議（O-11）與律師審閱（D-26）承接，公開上線前應再請律師確認。不改虛擬角色不計入成效與在線人數（D-10）的規則 | 已決定 | owner 2026-11-26 對話 |
 
 ---
 
