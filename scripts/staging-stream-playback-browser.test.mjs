@@ -3,13 +3,13 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
-  ALIAS, FIXTURE, ORIGIN, STEPS, STREAM_PATTERN_LIMIT,
+  ALIAS, FIXTURE, MANUAL_FIXTURE, ORIGIN, STEPS, STREAM_PATTERN_LIMIT,
   assessPlaybackProgress, classifyRequestFailure, classifyVideoLock, describePageError, isBenignPageError, postLockCoverage, redactStreamPath, streamTokenSubject, streamRequestOrigin, tallyStreamRequest, assessRecovery, assessReplayTokenExp, classifyPlayerPath, classifyRequest,
   classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims, finalVerdict,
   formatReceiptLines, receiptLeaks, redactStreamUrl, renewalDelaySeconds, replayDeadline,
   replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor, taipeiDateTimeLocal,
   describeErrorSample, formatRenewalErrorsLine, streamSegmentIdentity, summarizeStreamErrors,
-  formatManualLine, parseManualHours,
+  formatManualLine, parseManualHours, parseManualMode, manualLiveSchedule, videoFixtureFor,
   validUploadUrl, withCorruptedSignature, assessNewTokenUse, createTokenAttribution, playlistReferences, shouldRefuseInRecovery,
 } from "./staging-stream-playback-browser-core.mjs";
 import { describeFailure, probeAllowedOrigins, RECOVERY_CASES, runStreamPlaybackBrowser, safeReceiptText } from "./staging-stream-playback-browser.mjs";
@@ -754,7 +754,8 @@ test("the renewal line reports the renewed token's use and leaks nothing", () =>
   assert.equal(receiptLeaks(JSON.stringify(receipt)), false);
 });
 
-const manualEnv = { ...env, CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: "manual" };
+const manualEnv = { ...env, CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: "manual", CELEBRATEDEAL_STREAM_MANUAL_MODE: "replay" };
+const manualLiveEnv = { ...env, CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: "manual" };
 
 test("manual: hours default to 48 and only whole hours 1-72 are accepted", () => {
   assert.equal(parseManualHours(undefined), 48);
@@ -795,7 +796,7 @@ test("manual: the output line carries the public live page url and replay deadli
   receipt.manual.replayUntil = "2026-11-27T07:30:00.000Z";
   assert.equal(
     formatManualLine(receipt),
-    `stream_playback_manual=status:PASS url:${ORIGIN}/live/stream-playback-qa-manual-20261126-1530-ab12cd34 replay_until:2026-11-27T07:30:00.000Z video_lock:UNKNOWN`,
+    `stream_playback_manual=status:PASS url:${ORIGIN}/live/stream-playback-qa-manual-20261126-1530-ab12cd34 replay_until:2026-11-27T07:30:00.000Z video_lock:UNKNOWN mode:replay`,
   );
   const lines = formatReceiptLines(receipt).split("\n");
   assert.equal(lines.filter((item) => item.startsWith("stream_playback_manual=")).length, 1);
@@ -807,7 +808,7 @@ test("manual: the output line carries the public live page url and replay deadli
   assert.equal(JSON.parse(safe.json).manual.liveSlug, "stream-playback-qa-manual-20261126-1530-ab12cd34");
   assert.ok(safe.lines.includes(`${ORIGIN}/live/stream-playback-qa-manual-`));
   receipt.origin = { videoLock: "LOCKED" };
-  assert.match(formatManualLine(receipt), /video_lock:LOCKED$/u);
+  assert.match(formatManualLine(receipt), /video_lock:LOCKED mode:replay$/u);
   // Other scenarios never print the manual line.
   assert.equal(formatReceiptLines(createReceipt(env)).includes("stream_playback_manual="), false);
   // A blocked run, or a missing or unsafe slug, never prints a url.
@@ -835,6 +836,94 @@ test("manual: an invalid manual_hours stops before any browser; a launch failure
   assert.equal(receipt.sideEffects.liveCreates, 0);
   assert.doesNotMatch(formatReceiptLines(receipt), /url:/u);
   assert.equal(receipt.steps.find((entry) => entry.step === "VIEWER_START").status, "SKIPPED");
+});
+
+test("manual: mode defaults to live, only live/replay are accepted and other scenarios ignore it", () => {
+  assert.equal(parseManualMode(undefined), "live");
+  assert.equal(parseManualMode(""), "live");
+  assert.equal(parseManualMode(" replay "), "replay");
+  for (const bad of ["LIVE", "now", "live,replay", "0"]) assert.equal(parseManualMode(bad), null, bad);
+  assert.equal(createReceipt(manualLiveEnv).manualMode, "live");
+  assert.equal(createReceipt(manualEnv).manualMode, "replay");
+  assert.equal(createReceipt({ ...manualLiveEnv, CELEBRATEDEAL_STREAM_MANUAL_MODE: "x" }).manualMode, null);
+  assert.equal(createReceipt({ ...env, CELEBRATEDEAL_STREAM_MANUAL_MODE: "live" }).manualMode, null);
+  assert.equal(createReceipt({ ...env, CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: "quick", CELEBRATEDEAL_STREAM_MANUAL_MODE: "live" }).manualMode, null);
+  // Replay mode keeps its deadline; live mode counts from creation through start, video length and replay hours.
+  assert.equal(createReceipt({ ...manualEnv, CELEBRATEDEAL_STREAM_MANUAL_HOURS: "6" }).fixture.replayDeadlineMinutes, 360);
+  assert.equal(createReceipt({ ...manualLiveEnv, CELEBRATEDEAL_STREAM_MANUAL_HOURS: "6" }).fixture.replayDeadlineMinutes, 3 + 59 + 360);
+  assert.equal(replayDeadlineMinutes("full"), 58);
+  assert.equal(replayDeadlineMinutes("quick"), 20);
+});
+
+test("manual: live schedule starts about 3 minutes ahead on a whole minute and the replay deadline follows the video end", () => {
+  const nowMs = Date.UTC(2026, 10, 26, 8, 30, 20);
+  const { startsAt, endsAt, replayUntil } = manualLiveSchedule(nowMs, 48);
+  assert.equal(startsAt.toISOString(), "2026-11-26T08:34:00.000Z");
+  assert.equal(endsAt.getTime() - startsAt.getTime(), MANUAL_FIXTURE.videoDurationSeconds * 1_000);
+  assert.equal(replayUntil.getTime() - endsAt.getTime(), 48 * 60 * 60_000);
+  const early = manualLiveSchedule(Date.UTC(2026, 10, 26, 8, 30, 0), 1);
+  assert.equal(early.startsAt.toISOString(), "2026-11-26T08:33:00.000Z");
+  assert.ok(early.replayUntil.getTime() > early.endsAt.getTime());
+});
+
+test("manual: only manual uses the recognisable demo video; full and quick keep the 55-minute fixture", async () => {
+  assert.equal(videoFixtureFor("manual"), MANUAL_FIXTURE);
+  for (const scenario of ["full", "quick"]) {
+    const fixture = videoFixtureFor(scenario);
+    assert.equal(fixture.videoFile, FIXTURE.videoFile);
+    assert.equal(fixture.videoSha256, FIXTURE.videoSha256);
+    assert.equal(fixture.videoBytes, FIXTURE.videoBytes);
+    assert.equal(fixture.videoTitle, FIXTURE.videoTitle);
+    assert.equal(fixture.videoDurationSeconds, 3300);
+  }
+  assert.notEqual(MANUAL_FIXTURE.videoTitle, FIXTURE.videoTitle);
+  assert.notEqual(MANUAL_FIXTURE.videoSha256, FIXTURE.videoSha256);
+  // Within the direct-upload limit (3600 s) and long enough that a viewer can watch for a while.
+  assert.ok(MANUAL_FIXTURE.videoDurationSeconds > 3000 && MANUAL_FIXTURE.videoDurationSeconds <= 3600);
+  const bytes = await readFile(new URL(`./${MANUAL_FIXTURE.videoFile}`, import.meta.url));
+  assert.equal(bytes.length, MANUAL_FIXTURE.videoBytes);
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), MANUAL_FIXTURE.videoSha256);
+  assert.ok(bytes.length < 15 * 1024 * 1024);
+  const doc = await readFile(new URL("./fixtures/staging-stream-manual-demo.md", import.meta.url), "utf8");
+  assert.ok(doc.includes(MANUAL_FIXTURE.videoSha256) && doc.includes(String(MANUAL_FIXTURE.videoBytes)));
+  // The runner picks its fixture per scenario and never hard-codes the 55-minute one for the upload.
+  const runner = await readFile(new URL("./staging-stream-playback-browser.mjs", import.meta.url), "utf8");
+  assert.ok(runner.includes("videoFixtureFor(scenario)"));
+  assert.doesNotMatch(runner, /FIXTURE\.video(File|Bytes|Sha256|DurationSeconds)/u);
+});
+
+test("manual: live line adds mode and starts_at; an invalid mode stops before any browser", async () => {
+  const receipt = createReceipt({ ...manualLiveEnv, CELEBRATEDEAL_STREAM_MANUAL_HOURS: "24" });
+  for (const step of STEPS) setStep(receipt, step, skippedStepsFor("chromium", "manual").has(step) ? "SKIPPED" : "PASS");
+  Object.assign(receipt, finalVerdict(receipt));
+  receipt.manual.liveSlug = "stream-playback-qa-manual-20261126-1530-ab12cd34";
+  receipt.manual.replayUntil = "2026-11-28T09:33:00.000Z";
+  receipt.manual.startsAt = "2026-11-26T08:34:00.000Z";
+  assert.equal(
+    formatManualLine(receipt),
+    `stream_playback_manual=status:PASS url:${ORIGIN}/live/stream-playback-qa-manual-20261126-1530-ab12cd34 replay_until:2026-11-28T09:33:00.000Z video_lock:UNKNOWN mode:live starts_at:2026-11-26T08:34:00.000Z`,
+  );
+  assert.equal(receiptLeaks(JSON.stringify(receipt)), false);
+  receipt.manual.startsAt = null;
+  assert.doesNotMatch(formatManualLine(receipt), /url:/u);
+  const forbidden = { chromium: { launch: () => { throw new Error("must not launch"); } } };
+  const bad = await runStreamPlaybackBrowser({ ...manualLiveEnv, CELEBRATEDEAL_STREAM_MANUAL_MODE: "now" }, {
+    playwright: forbidden, verifyLineage: async () => true, verifyAlias: async () => true,
+  });
+  assert.equal(bad.reason, "INVALID_MANUAL_MODE");
+  assert.equal(formatManualLine(bad), "stream_playback_manual=status:BLOCKED reason:INVALID_MANUAL_MODE");
+});
+
+test("manual: workflow offers manual_mode (live by default) and passes it to the chromium job", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/staging-stream-playback-browser.yml", import.meta.url), "utf8");
+  const lines = workflow.split(/\r?\n/u);
+  const mode = lines.findIndex((line) => line.trim() === "manual_mode:");
+  assert.ok(mode > 0);
+  const block = lines.slice(mode + 1, mode + 12).map((line) => line.trim());
+  assert.ok(block.includes("default: live") && block.includes("type: choice"));
+  const options = block.indexOf("options:");
+  assert.deepEqual(block.slice(options + 1, options + 3), ["- live", "- replay"]);
+  assert.equal(workflow.split("CELEBRATEDEAL_STREAM_MANUAL_MODE: ${{ inputs.manual_mode }}").length - 1, 1);
 });
 
 test("manual: workflow offers the scenario and hours input and never runs the WebKit job for it", async () => {

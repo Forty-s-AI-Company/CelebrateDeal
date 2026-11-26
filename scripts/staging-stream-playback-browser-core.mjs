@@ -38,6 +38,31 @@ export const FIXTURE = Object.freeze({
   manualLiveTitlePrefix: "Stream Playback QA Manual",
 });
 
+/**
+ * Recognisable fixture used only by the manual scenario (full/quick keep FIXTURE above): 59 minutes,
+ * 320x180, 5 fps, the elapsed time as big HH:MM:SS text on a slowly changing colour and a short beep
+ * every 10 seconds, so a person on a phone can tell the video is really playing. See
+ * scripts/fixtures/staging-stream-manual-demo.md.
+ */
+export const MANUAL_FIXTURE = Object.freeze({
+  videoFile: "fixtures/staging-stream-manual-demo.mp4",
+  videoBytes: 5589546,
+  videoSha256: "4a8b708a37ab9d8f866af2b6ea5bc24b2c56b55154538fc868ab0a690c172501",
+  videoDurationSeconds: 3540,
+  videoTitle: "Stream Playback QA Manual Demo 59min v1",
+  uploadFileName: "staging-stream-manual-demo.mp4",
+});
+
+/** The video fixture a scenario uses: only manual switches to the recognisable demo video. */
+export function videoFixtureFor(scenario) {
+  if (scenario === "manual") return MANUAL_FIXTURE;
+  return {
+    videoFile: FIXTURE.videoFile, videoBytes: FIXTURE.videoBytes, videoSha256: FIXTURE.videoSha256,
+    videoDurationSeconds: FIXTURE.videoDurationSeconds, videoTitle: FIXTURE.videoTitle,
+    uploadFileName: "staging-stream-fifty-five-minutes.mp4",
+  };
+}
+
 export const STEPS = Object.freeze([
   "BINDING", "OWNER_SESSION", "FIXTURE_VIDEO", "FIXTURE_FORM", "FIXTURE_TEMPLATE", "FIXTURE_SCRIPT",
   "FIXTURE_LIVE", "PAGES", "VIEWER_START", "ORIGIN_PROBE", "RECOVERY", "RENEWAL", "SESSION_CLEANUP",
@@ -57,6 +82,31 @@ export function parseManualHours(value) {
   if (!/^\d{1,2}$/u.test(text)) return null;
   const hours = Number(text);
   return hours >= MANUAL_HOURS_MIN && hours <= MANUAL_HOURS_MAX ? hours : null;
+}
+
+export const MANUAL_MODES = Object.freeze(["live", "replay"]);
+export const MANUAL_MODE_DEFAULT = "live";
+/** Manual live mode: the scheduled start is this many minutes after creation (rounded up to a whole minute). */
+export const MANUAL_LIVE_START_MINUTES = 3;
+
+/** Manual mode: empty means live, anything but live/replay is null. */
+export function parseManualMode(value) {
+  if (value === undefined || value === null || String(value).trim() === "") return MANUAL_MODE_DEFAULT;
+  const text = String(value).trim();
+  return MANUAL_MODES.includes(text) ? text : null;
+}
+
+/**
+ * Manual live mode schedule: the pre-recorded video starts at startsAt (whole minute), ends after the
+ * video length, and its replay then stays open for manualHours (the studio requires the replay
+ * deadline to be later than the natural end).
+ */
+export function manualLiveSchedule(nowMs, manualHours = MANUAL_HOURS_DEFAULT, durationSeconds = MANUAL_FIXTURE.videoDurationSeconds) {
+  const minute = 60_000;
+  const startsAt = new Date(Math.ceil((nowMs + MANUAL_LIVE_START_MINUTES * minute) / minute) * minute);
+  const endsAt = new Date(startsAt.getTime() + durationSeconds * 1_000);
+  const replayUntil = new Date(Math.ceil((endsAt.getTime() + manualHours * 60 * minute) / minute) * minute);
+  return { startsAt, endsAt, replayUntil };
 }
 
 /** Steps a mode deliberately does not run; everything else must PASS. */
@@ -595,12 +645,13 @@ export function createReceipt(env = {}) {
   const viewerBrowser = VIEWER_BROWSERS.includes(env.CELEBRATEDEAL_STREAM_VIEWER_BROWSER) ? env.CELEBRATEDEAL_STREAM_VIEWER_BROWSER : "chromium";
   const scenario = SCENARIOS.includes(env.CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO) ? env.CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO : "full";
   const manualHours = scenario === "manual" ? parseManualHours(env.CELEBRATEDEAL_STREAM_MANUAL_HOURS) : null;
+  const manualMode = scenario === "manual" ? parseManualMode(env.CELEBRATEDEAL_STREAM_MANUAL_MODE) : null;
   return {
     schemaVersion: SCHEMA_VERSION,
     sourceSha: /^[a-f0-9]{40}$/u.test(env.CELEBRATEDEAL_SOURCE_SHA ?? "") ? env.CELEBRATEDEAL_SOURCE_SHA : null,
     // Manual never plays anything: the viewer browser is fixed to chromium for the owner steps.
-    viewerBrowser: scenario === "manual" ? "chromium" : viewerBrowser, scenario, manualHours,
-    manual: { liveSlug: null, replayUntil: null },
+    viewerBrowser: scenario === "manual" ? "chromium" : viewerBrowser, scenario, manualHours, manualMode,
+    manual: { liveSlug: null, replayUntil: null, startsAt: null },
     result: "BLOCKED", reason: "INVALID_BINDING",
     lineage: "NOT_VERIFIED", aliasBinding: "NOT_VERIFIED",
     startedAt: null, totalDurationMs: null,
@@ -609,7 +660,9 @@ export function createReceipt(env = {}) {
     fixture: {
       videoReused: false, videoUploaded: false, videoReadyWaitSeconds: null, readySyncCalls: 0,
       formReused: false, templateReused: false, scriptReused: false, scriptBound: false,
-      liveCreated: false, replayDeadlineMinutes: replayDeadlineMinutes(scenario, manualHours ?? MANUAL_HOURS_DEFAULT), formPublic: null,
+      liveCreated: false, replayDeadlineMinutes: manualMode === "live"
+        ? Math.round((manualLiveSchedule(0, manualHours ?? MANUAL_HOURS_DEFAULT).replayUntil.getTime()) / 60_000)
+        : replayDeadlineMinutes(scenario, manualHours ?? MANUAL_HOURS_DEFAULT), formPublic: null,
       formScopeSwitched: false, formScopeRestored: null,
     },
     viewer: {
@@ -874,7 +927,11 @@ export function formatManualLine(receipt) {
   const ready = receipt.result === "PASS" && /^[a-z0-9-]{1,120}$/u.test(manual.liveSlug ?? "") && typeof manual.replayUntil === "string";
   if (!ready) return `stream_playback_manual=status:${receipt.result === "PASS" ? "BLOCKED" : receipt.result} reason:${receipt.reason}`;
   const lock = ["LOCKED", "UNLOCKED"].includes(receipt.origin?.videoLock) ? receipt.origin.videoLock : "UNKNOWN";
-  return `stream_playback_manual=status:PASS url:${ORIGIN}/live/${manual.liveSlug} replay_until:${manual.replayUntil} video_lock:${lock}`;
+  const base = `stream_playback_manual=status:PASS url:${ORIGIN}/live/${manual.liveSlug} replay_until:${manual.replayUntil} video_lock:${lock}`;
+  if (receipt.manualMode === "live") {
+    return typeof manual.startsAt === "string" ? `${base} mode:live starts_at:${manual.startsAt}` : `stream_playback_manual=status:BLOCKED reason:${receipt.reason}`;
+  }
+  return `${base} mode:replay`;
 }
 
 const yes = (value) => (value === true ? "true" : value === false ? "false" : "null");
