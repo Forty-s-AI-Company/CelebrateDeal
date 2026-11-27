@@ -10,10 +10,11 @@ import { isExistingLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-vi
  * - 只接受 5 分鐘以內、長度已知的影片，而且不能是這場的主影片：等候影片不入場、
  *   不計量，不能被拿來免費、不限人數地播放完整內容（PR #734 審查 M-1）。
  * - 商家自填網址（`url`）的影片長度是商家自己填的：只接受路徑以 `.mp4`、`.webm`、
- *   `.mov` 結尾的直接影片檔（不接受 `.m3u8` 或其他 manifest，避免轉址或 manifest
- *   指到 Stream），而且不能指向 Cloudflare Stream：填 60 秒卻指向 2 小時的 Stream
- *   影片就能繞過 5 分鐘上限（PR #734 審查 m-A、#736 審查 m-1）。商家自己主機上的
- *   長檔仍可自報長度，是已知的殘留風險（見 PRISMA_INVARIANTS）。
+ *   `.mov` 結尾的直接影片檔（不接受 `.m3u8` 或其他 manifest），而且不能指向
+ *   Cloudflare Stream：填 60 秒卻指向 2 小時的 Stream 影片就能繞過 5 分鐘上限
+ *   （PR #734 審查 m-A、#736 審查 m-1）。副檔名只看路徑，擋不住 302 轉址到 Stream，
+ *   這要靠 Production 的 Stream 簽章鎖定；商家自己主機上的長檔仍可自報長度。
+ *   兩者都是已知的殘留風險（見 PRISMA_INVARIANTS）。
  * - 只在這位觀眾的開播時間前 60 分鐘內提供，更早只顯示海報。
  * - 簽章與端點的窗口在開播時間後還有一段寬限：VOD、預錄排程、常青場與指定場次
  *   60 秒（開播後主影片接手）；手動開播的即時直播（OBS、瀏覽器推流）30 分鐘，

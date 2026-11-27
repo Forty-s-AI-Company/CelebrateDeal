@@ -57,14 +57,21 @@ export const WAITING_VIDEO_RETRY_DELAYS_MS = [5_000, 30_000] as const;
 /**
  * The request state of one Live's waiting source, kept across rerenders: the
  * watch page refreshes every 2 seconds once the start has passed (each render
- * brings a new `serverNow`), and neither that nor a changed `scheduledAt` may
- * fetch again, re-sign, reattach the video or reset the retry count (#736 M-1).
+ * brings a new `serverNow`), and that may never fetch again, re-sign, reattach
+ * the video or reset the retry count (#736 M-1). Once a source is served, a
+ * changed `scheduledAt` does not fetch again either; before that (still trying,
+ * or given up), a changed `scheduledAt` starts over for the new start, so a
+ * postponed show still gets its loop in the new window (#736 re-review m-1).
  */
 type WaitingSourceRequests = {
   scope: string;
+  /** The start these requests were planned for. */
+  scheduledAt: string | null;
   /** Requests that got no source. */
   failures: number;
-  /** Served (renewal is attachHlsPlayback's job from here), or given up after the last retry. */
+  /** A source was served; renewal is attachHlsPlayback's job from here. */
+  served: boolean;
+  /** Served, or given up after the last retry. */
   done: boolean;
   inFlight: boolean;
   /** An effect of a mounted backdrop owns this state; a response that lands without one is dropped. */
@@ -74,8 +81,8 @@ type WaitingSourceRequests = {
   timer: ReturnType<typeof setTimeout> | null;
 };
 
-function freshRequests(scope: string): WaitingSourceRequests {
-  return { scope, failures: 0, done: false, inFlight: false, active: false, nextAt: null, timer: null };
+function freshRequests(scope: string, scheduledAt: string | null): WaitingSourceRequests {
+  return { scope, scheduledAt, failures: 0, served: false, done: false, inFlight: false, active: false, nextAt: null, timer: null };
 }
 
 /**
@@ -138,7 +145,7 @@ export function LiveWaitingBackdrop({
   const poster = parseSafeExternalHttpUrl(heroImageUrl);
   // Read only when the first request is planned, never a reason to plan again.
   const serverNowRef = useRef(serverNow);
-  const requestsRef = useRef<WaitingSourceRequests>(freshRequests(""));
+  const requestsRef = useRef<WaitingSourceRequests>(freshRequests("", null));
 
   useEffect(() => {
     serverNowRef.current = serverNow;
@@ -146,7 +153,12 @@ export function LiveWaitingBackdrop({
 
   useEffect(() => {
     if (!hasWaitingVideo) return;
-    if (requestsRef.current.scope !== scope) requestsRef.current = freshRequests(scope);
+    const previous = requestsRef.current;
+    // Another Live, or a new start before any source was served (a postponed show): plan afresh.
+    // An answer still in flight for the old plan is dropped because it no longer owns the ref.
+    if (previous.scope !== scope || (!previous.served && previous.scheduledAt !== scheduledAt)) {
+      requestsRef.current = freshRequests(scope, scheduledAt);
+    }
     const requests = requestsRef.current;
     if (requests.done) return;
     requests.active = true;
@@ -176,6 +188,7 @@ export function LiveWaitingBackdrop({
           // Unmounted, the room closed or another Live: drop the answer.
           if (!requests.active || requestsRef.current !== requests) return;
           if (next) {
+            requests.served = true;
             requests.done = true;
             setSourceState({ scope: requests.scope, source: next });
             return;
