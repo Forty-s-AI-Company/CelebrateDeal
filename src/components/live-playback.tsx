@@ -561,7 +561,7 @@ function LiveAdmissionOverlay({ status }: { status: LiveAdmissionStatus }) {
   return (
     <div role="status" className="absolute inset-0 z-50 grid place-items-center bg-slate-950/85 p-6 text-center">
       <div className="max-w-xs rounded-2xl border border-white/15 bg-black/45 p-5 backdrop-blur-md">
-        <p className="text-base font-black">{status === "checking" ? "正在確認直播容量…" : "直播容量目前暫停服務"}</p>
+        <p className="text-base font-black">{status === "checking" ? "正在進入直播間…" : "直播容量目前暫停服務"}</p>
         <p className="mt-2 text-sm text-white/75">請稍後再試；目前不會建立播放、報名或購買來源。</p>
       </div>
     </div>
@@ -1777,7 +1777,10 @@ function isWaitingRoomView(live: LivePageData, runtimeState: LiveRuntimeState, i
  */
 function LivePlayerIdleBackdrop({ live, isWaitingRoom }: { live: LivePageData; isWaitingRoom: boolean }) {
   if (isWaitingRoom) {
-    return <LiveWaitingBackdrop vendorId={live.vendorId} liveId={live.id} heroImageUrl={live.heroImageUrl} hasWaitingVideo={live.hasWaitingVideo === true} />;
+    return (
+      <LiveWaitingBackdrop vendorId={live.vendorId} liveId={live.id} heroImageUrl={live.heroImageUrl}
+        hasWaitingVideo={live.hasWaitingVideo === true} scheduledAt={live.scheduledAt} serverNow={live.serverNow} />
+    );
   }
   return <div className="h-full bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />;
 }

@@ -94,6 +94,22 @@ describe("Live.waitingVideoId on PostgreSQL", () => {
     await expect(resolveLiveWaitingSource(db, { vendorId: a.vendor.id, liveId: a.live.id, now: NOW })).resolves.toBeNull();
   });
 
+  it("refuses binding the main video or a loop longer than 5 minutes at playback time", async () => {
+    const { vendor, live, main, loop } = await vendorWithLive("guards");
+    // The database only binds the vendor; length and the main video are checked by the application.
+    await db.live.update({ where: { id: live.id }, data: { waitingVideoId: main.id } });
+    await expect(resolveLiveWaitingSource(db, { vendorId: vendor.id, liveId: live.id, now: NOW })).resolves.toBeNull();
+    await db.live.update({ where: { id: live.id }, data: { waitingVideoId: loop.id } });
+    await db.video.update({ where: { id: loop.id }, data: { durationSec: 301 } });
+    await expect(resolveLiveWaitingSource(db, { vendorId: vendor.id, liveId: live.id, now: NOW })).resolves.toBeNull();
+    await db.video.update({ where: { id: loop.id }, data: { durationSec: 300 } });
+    await expect(resolveLiveWaitingSource(db, { vendorId: vendor.id, liveId: live.id, now: NOW }))
+      .resolves.toEqual({ playbackUrl: loop.videoUrl });
+    // More than 60 minutes before the start: poster only.
+    await expect(resolveLiveWaitingSource(db, { vendorId: vendor.id, liveId: live.id, now: new Date(NOW.getTime() - 31 * 60_000) }))
+      .resolves.toBeNull();
+  });
+
   it("serves nothing when the vendor's included Stream minutes are used up", async () => {
     const { vendor, live, loop } = await vendorWithLive("quota");
     await db.live.update({ where: { id: live.id }, data: { waitingVideoId: loop.id } });

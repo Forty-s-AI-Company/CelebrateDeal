@@ -219,12 +219,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
  * /api/live-waiting-source.
  */
 function waitingVideoProps(
-  live: { vendorId: string; waitingVideo: Parameters<typeof isWaitingVideoPlayable>[0] },
+  live: Parameters<typeof isWaitingVideoPlayable>[1] & { waitingVideo: Parameters<typeof isWaitingVideoPlayable>[0] },
   runtimeState: LiveRuntimeState,
   evergreen: EvergreenViewerSession | null,
 ): { hasWaitingVideo?: true } {
   if (runtimeState !== "waiting" || (evergreen && !evergreen.assigned)) return {};
-  return isWaitingVideoPlayable(live.waitingVideo, live.vendorId) ? { hasWaitingVideo: true } : {};
+  return isWaitingVideoPlayable(live.waitingVideo, live) ? { hasWaitingVideo: true } : {};
 }
 
 export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {

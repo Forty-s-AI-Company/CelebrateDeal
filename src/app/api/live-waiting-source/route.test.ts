@@ -35,7 +35,7 @@ describe("GET /api/live-waiting-source", () => {
     await expect(response.json()).resolves.toEqual({ playbackUrl: "https://video.example.test/waiting.mp4" });
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.resolve).toHaveBeenCalledWith({}, expect.objectContaining({ vendorId: "vendor-1", liveId: "live-1" }));
-    expect(mocks.checkRateLimit).toHaveBeenCalledWith(expect.any(Request), "live-waiting-source", 60, 60_000);
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(expect.any(Request), "live-waiting-source", 120, 60_000);
   });
 
   it("answers every refusal with the same 403", async () => {

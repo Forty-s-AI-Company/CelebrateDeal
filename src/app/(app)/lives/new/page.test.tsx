@@ -186,12 +186,12 @@ describe("NewLivePage data minimization", () => {
     expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-2" }), undefined);
   });
 
-  it("only serializes the video identifier, title and source type into the client form", async () => {
+  it("only serializes the video identifier, title, source type and length into the client form", async () => {
     renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({}) }));
 
     expect(mocks.videoFindMany).toHaveBeenCalledExactlyOnceWith({
       where: liveReadyVideoWhere("vendor-1"),
-      select: { id: true, title: true, sourceType: true },
+      select: { id: true, title: true, sourceType: true, durationSec: true },
       orderBy: { createdAt: "desc" },
     });
     expect(mocks.messageTemplateFindMany).toHaveBeenCalledExactlyOnceWith({

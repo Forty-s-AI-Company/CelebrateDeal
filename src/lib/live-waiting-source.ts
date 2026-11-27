@@ -3,7 +3,12 @@ import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { EVERGREEN_LIVE_SELECT, resolveViewerLiveRuntime } from "@/lib/evergreen-viewer-session";
 import { FIXED_SESSION_LIVE_SELECT, resolveViewerFixedSessionForLive } from "@/lib/live-fixed-sessions-store";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
-import { isWaitingVideoPlayable, WAITING_VIDEO_READINESS_SELECT } from "@/lib/live-waiting-video";
+import {
+  isWaitingVideoPlayable,
+  isWithinWaitingVideoWindow,
+  WAITING_VIDEO_READINESS_SELECT,
+  WAITING_VIDEO_TOKEN_GRACE_SECONDS,
+} from "@/lib/live-waiting-video";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { readVendorStreamUsageSeconds } from "@/lib/stream-usage-counter";
 import { signVideoUrl, STREAM_LIVE_TOKEN_TTL_SECONDS } from "@/lib/cloudflare-stream-signing";
@@ -13,12 +18,14 @@ import { signVideoUrl, STREAM_LIVE_TOKEN_TTL_SECONDS } from "@/lib/cloudflare-st
  *
  * - 只收 vendorId＋liveId，不收影片 id：回傳的永遠是這一場 `Live.waitingVideoId`
  *   綁定、而且屬於同一個 vendor 的影片，不能被拿來播任意影片。
- * - 只在這位觀眾自己的場次（常青場、指定場次或共同開播時間）仍在等候時回應；
- *   開播後主影片接手，這裡改回 403。
+ * - 只在這位觀眾自己的場次（常青場、指定場次或共同開播時間）仍在等候、而且距離
+ *   開播 60 分鐘以內時回應；更早只顯示海報，開播後主影片接手，這裡改回 403。
+ * - 影片必須是 5 分鐘以內、長度已知的點播影片，而且不是這場的主影片（審查 M-1）。
  * - 不經直播容量入場（不建立 LiveViewerSession、不占同時觀看人數），也不寫
  *   Stream 用量帳本：與報名頁宣傳影片相同，屬於開播前的公開預告素材。商家
  *   授權被撤銷或本月 Stream 分鐘數已用完時不提供（觀眾只看到海報）。
- * - Cloudflare 影片以 F-093 短效 token 簽章（10 分鐘），播放器到期前回到這裡續期。
+ * - Cloudflare 影片以 F-093 短效 token 簽章（10 分鐘，且不晚於這位觀眾的開播時間＋60 秒），
+ *   播放器到期前回到這裡續期。
  */
 type WaitingSourceInput = {
   vendorId: string;
@@ -76,6 +83,8 @@ export async function resolveLiveWaitingSource(db: PrismaClient, input: WaitingS
       ...EVERGREEN_LIVE_SELECT,
       ...FIXED_SESSION_LIVE_SELECT,
       vendor: { select: { timezone: true } },
+      videoId: true,
+      waitingVideoId: true,
       scheduledAt: true,
       startedAt: true,
       endedAt: true,
@@ -112,7 +121,7 @@ export async function resolveLiveWaitingSource(db: PrismaClient, input: WaitingS
   if (!live || live.vendorId !== input.vendorId) return null;
   if (!getRuntimeLivePublishReadiness(live).ready) return null;
   const waitingVideo = live.waitingVideo;
-  if (!waitingVideo || !isWaitingVideoPlayable(waitingVideo, input.vendorId)) return null;
+  if (!waitingVideo || !isWaitingVideoPlayable(waitingVideo, live)) return null;
 
   const fixedSession = await resolveViewerFixedSessionForLive(db, live, {
     registrationToken: input.registrationToken,
@@ -128,6 +137,9 @@ export async function resolveLiveWaitingSource(db: PrismaClient, input: WaitingS
   if (runtime.state !== "waiting") return null;
   // An evergreen visitor without an assigned session sees the preparing notice, not the room.
   if (runtime.evergreen && !runtime.evergreen.assigned) return null;
+  // The viewer's own start: the fixed session they follow, their evergreen session, or the shared start.
+  const startsAt = fixedSession?.startAt ?? runtime.evergreen?.sessionStartAt ?? live.scheduledAt;
+  if (!isWithinWaitingVideoWindow(startsAt.getTime(), now.getTime())) return null;
   if (!await vendorStreamDeliveryAllowed(db, input.vendorId, now)) return null;
 
   const storedUrl = parseSafeExternalHttpUrl(waitingVideo.videoUrl);
@@ -136,6 +148,8 @@ export async function resolveLiveWaitingSource(db: PrismaClient, input: WaitingS
     vendorId: input.vendorId,
     now,
     ttlSeconds: STREAM_LIVE_TOKEN_TTL_SECONDS,
+    // A leaked URL stops working shortly after this viewer's show starts.
+    notAfter: new Date(startsAt.getTime() + WAITING_VIDEO_TOKEN_GRACE_SECONDS * 1_000),
   });
   if (!signed) return null;
   return signed.signed

@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
 
-  const limited = await checkRateLimit(request, "live-waiting-source", 60, 60_000);
+  const limited = await checkRateLimit(request, "live-waiting-source", 120, 60_000);
   if (limited) return limited;
 
   const url = new URL(request.url);

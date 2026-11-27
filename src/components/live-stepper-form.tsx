@@ -63,7 +63,7 @@ import {
   type LiveStudioDraftEnvelope,
   type LiveStudioDraftPayload,
 } from "@/lib/live-studio-draft";
-import { isWaitingVideoSourceType } from "@/lib/live-waiting-video";
+import { isWaitingVideoOption } from "@/lib/live-waiting-video";
 import {
   isLiveStudioStepKey,
   LIVE_STUDIO_STEPS,
@@ -120,10 +120,11 @@ type LiveResourceDrawer =
   | { kind: "template"; trigger: LiveQuickTemplateTrigger; ruleTrigger?: LiveNotificationRuleTrigger };
 
 /**
- * `sourceType` comes from the server list; an option created in the studio's
- * drawer has none and is always a VOD (an uploaded file or a video URL).
+ * `sourceType` and `durationSec` come from the server list; an option created in
+ * the studio's drawer has neither, so it is not offered as a waiting video until
+ * the page reloads with its length known.
  */
-type LiveVideoOption = Pick<Video, "id" | "title"> & { sourceType?: string };
+type LiveVideoOption = Pick<Video, "id" | "title"> & { sourceType?: string; durationSec?: number | null };
 type LiveProductOption = Pick<Product, "id" | "name" | "inventory">;
 type LiveFormOption = Pick<RegistrationForm, "id" | "name">;
 type LiveTemplateOption = Pick<MessageTemplate, "id" | "name" | "channel" | "trigger">;
@@ -1014,9 +1015,12 @@ function NotificationRulesEditor({
   );
 }
 
-/** Waiting-room loop candidates: only pre-recorded videos, never a live input or browser broadcast. */
-function waitingVideoOptions(videos: LiveVideoOption[]) {
-  return videos.filter((video) => video.sourceType === undefined || isWaitingVideoSourceType(video.sourceType));
+/**
+ * Waiting-room loop candidates: only pre-recorded videos of a known length up to
+ * 5 minutes, never a live input or browser broadcast, and never the main video.
+ */
+function waitingVideoOptions(videos: LiveVideoOption[], mainVideoId: string) {
+  return videos.filter((video) => video.id !== mainVideoId && isWaitingVideoOption(video));
 }
 
 /** 內容: purpose, title, media, registration page and schedule; address, description, replay deadline and cover are advanced. */
@@ -1056,9 +1060,9 @@ function renderLiveStudioContentStep(input: LiveStudioContentStepOptions) {
           {/* Uncontrolled like the other studio selects; the draft serializes the DOM value. The server rechecks the vendor and readiness. */}
           <select name="waitingVideoId" defaultValue={input.initialValues.waitingVideoId ?? ""} className="h-11 rounded-md border border-border px-3">
             <option value="">不使用（開播前只顯示封面）</option>
-            {waitingVideoOptions(input.videos).map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
+            {waitingVideoOptions(input.videos, input.selectedVideoId).map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
           </select>
-          <span className="text-xs font-normal text-slate-500">觀眾在開播前進入直播間時，背景會靜音循環播放這支影片，並以直播封面當作預覽圖；開播後自動換成直播內容。只能選已上傳完成的影片。</span>
+          <span className="text-xs font-normal text-slate-500">需 5 分鐘以內。開播前 1 小時內進入直播間的觀眾，背景會靜音循環播放這支影片，並以直播封面當作預覽圖；開播後自動換成直播內容。只能選已上傳完成、不是直播主影片的影片。</span>
         </label>
         {input.videos.length === 0 && input.pendingVideos.length === 0 ? <p className="text-sm text-slate-600">目前沒有可播放的影片，可以在這裡直接上傳。</p> : null}
         <LivePendingVideos videos={input.pendingVideos} onReady={input.onPendingVideoReady} onProblem={input.onPendingVideoProblem} />

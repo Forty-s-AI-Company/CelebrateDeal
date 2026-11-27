@@ -5,6 +5,7 @@ import { Volume2, VolumeX } from "lucide-react";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { attachHlsPlayback } from "@/lib/hls-playback-attachment";
 import type { RenewablePlaybackSource } from "@/lib/signed-playback-renewal";
+import { waitingVideoWindowOpensAtMs } from "@/lib/live-waiting-video";
 
 const clientHeaders = {
   "Content-Type": "application/json",
@@ -43,6 +44,24 @@ export async function fetchLiveWaitingSource(vendorId: string, liveId: string) {
   return projectWaitingVideoSource(await response.json());
 }
 
+/** setTimeout's largest delay; a longer wait is re-armed in steps. */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+/** Asked this long after the window opens on the server clock, so the server already agrees. */
+const WINDOW_OPEN_MARGIN_MS = 1_000;
+
+/**
+ * Milliseconds (from now, on this device) until the waiting video may be asked
+ * for: 60 minutes before the viewer's own start, measured on the server clock
+ * the page was rendered with. Without both times the server alone decides (0).
+ */
+export function waitingVideoFetchDelayMs(scheduledAt: string | null | undefined, serverNow: string | null | undefined) {
+  const startMs = scheduledAt ? Date.parse(scheduledAt) : Number.NaN;
+  const serverNowMs = serverNow ? Date.parse(serverNow) : Number.NaN;
+  if (!Number.isFinite(startMs) || !Number.isFinite(serverNowMs)) return 0;
+  const untilOpen = waitingVideoWindowOpensAtMs(startMs) - serverNowMs;
+  return untilOpen > 0 ? untilOpen + WINDOW_OPEN_MARGIN_MS : 0;
+}
+
 /** Releases the element's media: no request keeps running after the room closes. */
 function releaseVideo(video: HTMLVideoElement) {
   video.pause();
@@ -58,7 +77,9 @@ function playMuted(video: HTMLVideoElement) {
  * The waiting room's full-bleed background: the merchant's poster, and when the
  * Live has a waiting video, that video muted, looped and autoplaying over it
  * (the poster stays as its poster). There is no pause, seek bar or controls,
- * only a sound toggle. When the room closes (the show starts) this unmounts:
+ * only a sound toggle. The video is served only within 60 minutes of the
+ * viewer's own start: an earlier visitor sees the poster, and the source is
+ * asked for by itself when that window opens. When the room closes (the show starts) this unmounts:
  * hls.js is destroyed, the renewal stops and the element's source is dropped
  * before the main player takes over.
  */
@@ -67,11 +88,16 @@ export function LiveWaitingBackdrop({
   liveId,
   heroImageUrl,
   hasWaitingVideo,
+  scheduledAt = null,
+  serverNow = null,
 }: {
   vendorId: string;
   liveId: string;
   heroImageUrl: string | null;
   hasWaitingVideo: boolean;
+  /** The viewer's own start and the server time the page was rendered at (ISO). */
+  scheduledAt?: string | null;
+  serverNow?: string | null;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [sourceState, setSourceState] = useState<{ scope: string; source: RenewablePlaybackSource | null }>({ scope: "", source: null });
@@ -83,11 +109,28 @@ export function LiveWaitingBackdrop({
   useEffect(() => {
     if (!hasWaitingVideo) return;
     let disposed = false;
-    void fetchLiveWaitingSource(vendorId, liveId)
-      .then((next) => { if (!disposed) setSourceState({ scope, source: next }); })
-      .catch(() => { if (!disposed) setSourceState({ scope, source: null }); });
-    return () => { disposed = true; };
-  }, [hasWaitingVideo, liveId, scope, vendorId]);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const load = () => {
+      void fetchLiveWaitingSource(vendorId, liveId)
+        .then((next) => { if (!disposed) setSourceState({ scope, source: next }); })
+        .catch(() => { if (!disposed) setSourceState({ scope, source: null }); });
+    };
+    // Before the 60-minute window only the poster shows; the source is asked for when it opens.
+    const openAt = Date.now() + waitingVideoFetchDelayMs(scheduledAt, serverNow);
+    const arm = () => {
+      const remaining = openAt - Date.now();
+      if (remaining <= 0) {
+        load();
+        return;
+      }
+      timer = setTimeout(arm, Math.min(remaining, MAX_TIMER_DELAY_MS));
+    };
+    arm();
+    return () => {
+      disposed = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [hasWaitingVideo, liveId, scheduledAt, scope, serverNow, vendorId]);
 
   useEffect(() => {
     const video = videoRef.current;

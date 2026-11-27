@@ -11,7 +11,7 @@ import { LiveStudioDraftPayloadSchema, parseStoredLiveStudioDraft, type LiveStud
 import { LIVE_STUDIO_FIRST_STEP_INDEX, liveStudioStepSummary } from "@/lib/live-studio-steps";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
-import { isWaitingVideoSourceType } from "@/lib/live-waiting-video";
+import { isWaitingVideoOption } from "@/lib/live-waiting-video";
 import { formatZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import { fixedSessionDraftRows } from "@/lib/live-fixed-sessions";
 import {
@@ -150,11 +150,13 @@ function prepareLiveEditorResources(input: {
  * otherwise saving unbinds it. The draft carries the key only when one is set.
  */
 function prepareWaitingVideoForEditor(
-  waitingVideoId: string | null,
-  videos: Array<{ id: string; sourceType: string }>,
+  live: { waitingVideoId: string | null; videoId: string | null },
+  videos: Array<{ id: string; sourceType: string; durationSec: number }>,
 ): { unavailable: boolean; payloadFields: { waitingVideoId?: string } } {
+  const waitingVideoId = live.waitingVideoId;
   if (!waitingVideoId) return { unavailable: false, payloadFields: {} };
-  const available = videos.some((video) => video.id === waitingVideoId && isWaitingVideoSourceType(video.sourceType));
+  const available = waitingVideoId !== live.videoId
+    && videos.some((video) => video.id === waitingVideoId && isWaitingVideoOption(video));
   return available
     ? { unavailable: false, payloadFields: { waitingVideoId } }
     : { unavailable: true, payloadFields: {} };
@@ -238,7 +240,7 @@ export default async function EditLivePage({
     }),
     db.video.findMany({
       where: liveReadyVideoWhere(vendor.id),
-      select: { id: true, title: true, sourceType: true },
+      select: { id: true, title: true, sourceType: true, durationSec: true },
       orderBy: { createdAt: "desc" },
     }),
     db.product.findMany({
@@ -324,7 +326,7 @@ export default async function EditLivePage({
     return !template || template.trigger !== expectedTrigger;
   });
   const fixedSessionStudio = prepareFixedSessionStudio(live, vendor.timezone);
-  const waitingVideo = prepareWaitingVideoForEditor(live.waitingVideoId, videos);
+  const waitingVideo = prepareWaitingVideoForEditor(live, videos);
   const hasUnavailableWaitingVideo = waitingVideo.unavailable;
   const basePayload = LiveStudioDraftPayloadSchema.parse({
     title: live.title,

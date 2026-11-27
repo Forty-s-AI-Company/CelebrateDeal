@@ -382,13 +382,14 @@ describe("PublicLivePage", () => {
       vendorId: "vendor-1",
       sourceType: "cloudflare_stream",
       status: "ready",
+      durationSec: 24,
       cloudflareReadyToStream: true,
       cloudflareLiveInputUid: null,
       liveInputStatus: null,
     };
-    const waitingRender = async (waitingVideo: unknown, state = "waiting") => {
+    const waitingRender = async (waitingVideo: unknown, state = "waiting", overrides: Record<string, unknown> = {}) => {
       mocks.resolveLiveRuntime.mockReturnValue({ state, playbackStartSeconds: null });
-      mocks.findFirst.mockResolvedValue({ ...publicLive, heroImageUrl: "https://img.example.test/poster.jpg", waitingVideoId: "loop-1", waitingVideo });
+      mocks.findFirst.mockResolvedValue({ ...publicLive, heroImageUrl: "https://img.example.test/poster.jpg", videoId: "main-1", waitingVideoId: "loop-1", waitingVideo, ...overrides });
       const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
       return element.props.live as Record<string, unknown>;
     };
@@ -396,7 +397,7 @@ describe("PublicLivePage", () => {
     it("loads only the waiting video's readiness fields, never its URL or provider ids", async () => {
       await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
       expect(mocks.findFirst.mock.calls[0]![0].include.waitingVideo).toEqual({
-        select: { vendorId: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true },
+        select: { vendorId: true, sourceType: true, status: true, durationSec: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true },
       });
     });
 
@@ -417,6 +418,10 @@ describe("PublicLivePage", () => {
       expect(await waitingRender({ ...loop, sourceType: "cloudflare_live", cloudflareLiveInputUid: "a".repeat(32), liveInputStatus: "created" })).not.toHaveProperty("hasWaitingVideo");
       expect(await waitingRender({ ...loop, cloudflareReadyToStream: false })).not.toHaveProperty("hasWaitingVideo");
       expect(await waitingRender(null)).not.toHaveProperty("hasWaitingVideo");
+      // Review M-1: longer than 5 minutes, of unknown length, or the main video itself.
+      expect(await waitingRender({ ...loop, durationSec: 301 })).not.toHaveProperty("hasWaitingVideo");
+      expect(await waitingRender({ ...loop, durationSec: 0 })).not.toHaveProperty("hasWaitingVideo");
+      expect(await waitingRender(loop, "waiting", { videoId: "loop-1" })).not.toHaveProperty("hasWaitingVideo");
     });
   });
 

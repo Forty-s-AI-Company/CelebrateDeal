@@ -246,16 +246,17 @@ describe("EditLivePage unified Live Studio", () => {
   it("keeps a ready pre-recorded 開播前等候影片 and drops one that can no longer loop", async () => {
     const lastInitialValues = () => (mocks.liveStepperForm.mock.calls.at(-1) as unknown as [{ initialValues: Record<string, unknown> }])[0].initialValues;
     mocks.videoFindMany.mockResolvedValue([
-      { id: "loop-1", title: "等候循環", sourceType: "url" },
-      { id: "obs-input", title: "OBS", sourceType: "cloudflare_live" },
+      { id: "loop-1", title: "等候循環", sourceType: "url", durationSec: 24 },
+      { id: "obs-input", title: "OBS", sourceType: "cloudflare_live", durationSec: 0 },
+      { id: "long-1", title: "完整講座", sourceType: "url", durationSec: 3_600 },
     ]);
     mocks.liveFindFirst.mockResolvedValue({ ...live, interactionScriptId: null, waitingVideoId: "loop-1" });
     let html = renderToStaticMarkup(await EditLivePage({ params: Promise.resolve({ id: "live-1" }), searchParams: Promise.resolve({}) }));
     expect(html).not.toContain("開播前等候影片已無法播放");
     expect(lastInitialValues()).toMatchObject({ waitingVideoId: "loop-1" });
 
-    for (const waitingVideoId of ["obs-input", "archived-or-foreign"]) {
-      mocks.liveFindFirst.mockResolvedValue({ ...live, interactionScriptId: null, waitingVideoId });
+    for (const [waitingVideoId, videoId] of [["obs-input", null], ["archived-or-foreign", null], ["long-1", null], ["loop-1", "loop-1"]]) {
+      mocks.liveFindFirst.mockResolvedValue({ ...live, interactionScriptId: null, waitingVideoId, videoId });
       html = renderToStaticMarkup(await EditLivePage({ params: Promise.resolve({ id: "live-1" }), searchParams: Promise.resolve({}) }));
       expect(html).toContain("開播前等候影片已無法播放");
       expect(lastInitialValues()).not.toHaveProperty("waitingVideoId");

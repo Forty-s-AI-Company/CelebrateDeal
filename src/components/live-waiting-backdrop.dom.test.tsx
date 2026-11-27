@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/hls-playback-attachment", () => ({ attachHlsPlayback: mocks.attachHlsPlayback }));
 
-import { fetchLiveWaitingSource, LiveWaitingBackdrop, projectWaitingVideoSource } from "./live-waiting-backdrop";
+import { fetchLiveWaitingSource, LiveWaitingBackdrop, projectWaitingVideoSource, waitingVideoFetchDelayMs } from "./live-waiting-backdrop";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -143,6 +143,60 @@ describe("LiveWaitingBackdrop", () => {
     fetchMock.mockRejectedValue(new Error("offline"));
     await render({ liveId: "live-2" });
     expect(container.querySelector("video")).toBeNull();
+  });
+});
+
+describe("LiveWaitingBackdrop 60-minute window", () => {
+  const serverNow = "2026-11-27T08:00:00.000Z";
+
+  it("shows only the poster to an early visitor and asks for the loop by itself when the window opens", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      vi.setSystemTime(new Date(serverNow));
+      // Starts in 90 minutes: the window opens in 30.
+      await render({ scheduledAt: "2026-11-27T09:30:00.000Z", serverNow });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(container.querySelector("video")).toBeNull();
+      expect(container.innerHTML).toContain("poster.jpg");
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(30 * 60_000 - 5_000); });
+      expect(fetchMock).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(fetchMock).toHaveBeenCalledOnce();
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      expect(container.querySelector('[data-testid="live-waiting-video"]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("asks at once inside the window and stops waiting when the room closes early", async () => {
+    await render({ scheduledAt: "2026-11-27T08:30:00.000Z", serverNow });
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      vi.setSystemTime(new Date(serverNow));
+      fetchMock.mockClear();
+      // Starts in 4 hours: the request is only armed, then the room closes before it fires.
+      await act(async () => root.render(<LiveWaitingBackdrop vendorId="vendor-1" liveId="live-9" heroImageUrl={null} hasWaitingVideo scheduledAt="2026-11-27T12:00:00.000Z" serverNow={serverNow} />));
+      expect(fetchMock).not.toHaveBeenCalled();
+      await act(async () => root.render(<div />));
+      await act(async () => { await vi.advanceTimersByTimeAsync(4 * 60 * 60_000); });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("measures the wait on the server clock the page was rendered with", () => {
+    expect(waitingVideoFetchDelayMs("2026-11-27T09:30:00.000Z", serverNow)).toBe(30 * 60_000 + 1_000);
+    expect(waitingVideoFetchDelayMs("2026-11-27T09:00:00.000Z", serverNow)).toBe(0);
+    expect(waitingVideoFetchDelayMs("2026-11-27T08:10:00.000Z", serverNow)).toBe(0);
+    // Without both times the server alone decides.
+    expect(waitingVideoFetchDelayMs(null, serverNow)).toBe(0);
+    expect(waitingVideoFetchDelayMs("2026-11-27T09:30:00.000Z", undefined)).toBe(0);
+    expect(waitingVideoFetchDelayMs("not a date", serverNow)).toBe(0);
   });
 });
 

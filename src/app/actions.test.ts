@@ -3042,6 +3042,7 @@ describe("upsertLiveAction", () => {
       where: {
         vendorId: "vendor-1",
         id: "loop-1",
+        durationSec: { gt: 0, lte: 300 },
         OR: [
           { sourceType: "url", status: "ready" },
           { sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: true },
@@ -3059,6 +3060,19 @@ describe("upsertLiveAction", () => {
     ));
     const formData = liveFormData();
     formData.set("waitingVideoId", "foreign-video");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
+    );
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses the Live's own main video as its 開播前等候影片", async () => {
+    allowCurrentVendorLiveReferences();
+    // Even a main video short enough to pass the lookup must not become the unmetered loop.
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", durationSec: 120 });
+    const formData = liveFormData();
+    formData.set("waitingVideoId", "video-1");
 
     await expect(upsertLiveAction(formData)).rejects.toThrow(
       "redirect:/lives/new?error=invalid_reference&draft=draft-1",

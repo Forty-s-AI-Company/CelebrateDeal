@@ -234,9 +234,14 @@ function optionalDraftReference(value: string | undefined) {
   return value ? value : null;
 }
 
-/** 開播前等候影片: the id to store, and whether a submitted id did not resolve to a ready VOD of this vendor. */
-function waitingVideoBinding(submittedId: string | null, resolved: { id: string } | null) {
-  return { waitingVideoId: resolved?.id ?? null, missing: submittedId !== null && !resolved };
+/**
+ * 開播前等候影片: the id to store, and whether a submitted id is refused: it did
+ * not resolve to a short ready VOD of this vendor, or it is the Live's own main
+ * video (the unmetered waiting loop must never carry the show, review M-1).
+ */
+function waitingVideoBinding(submittedId: string | null, resolved: { id: string } | null, mainVideoId: string | null) {
+  const missing = submittedId !== null && (!resolved || submittedId === mainVideoId);
+  return { waitingVideoId: missing ? null : resolved?.id ?? null, missing };
 }
 
 type LiveMutationData = {
@@ -663,7 +668,7 @@ async function resolveSubmittedLiveReferences(input: {
     input.quotaPageIds.length > 0
       ? input.db.partnerFunnelPage.findMany({ where: { vendorId: input.vendorId, id: { in: input.quotaPageIds } }, select: { id: true } })
       : Promise.resolve([]),
-    // 開播前等候影片: a ready VOD of the current vendor only (the composite FK enforces the vendor again).
+    // 開播前等候影片: a ready VOD of the current vendor up to 5 minutes long (the composite FK enforces the vendor again).
     input.waitingVideoId
       ? input.db.video.findFirst({ where: liveWaitingVideoWhere(input.vendorId, input.waitingVideoId), select: { id: true } })
       : Promise.resolve(null),
@@ -915,7 +920,7 @@ export async function upsertLiveAction(formData: FormData) {
     quotaPages,
     waitingVideo,
   } = references;
-  const waitingVideoBound = waitingVideoBinding(waitingVideoId, waitingVideo);
+  const waitingVideoBound = waitingVideoBinding(waitingVideoId, waitingVideo, videoId);
   void ignoredSubmittedReminderTemplate;
   // 排除條件只用已驗證屬於目前 vendor 的 live，避免用別人的 live id 探測 slug 歸屬。
   await requireLiveSlugAvailable(db, { vendorId: vendor.id, slug: parsedSubmission.slug, existingLive, draftClaim, slugTakenPath });

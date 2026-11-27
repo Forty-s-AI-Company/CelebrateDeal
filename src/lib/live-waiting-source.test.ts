@@ -18,6 +18,7 @@ const waitingVideo = {
   vendorId: "vendor-1",
   sourceType: "url",
   status: "ready",
+  durationSec: 24,
   cloudflareReadyToStream: false,
   cloudflareLiveInputUid: null,
   liveInputStatus: null,
@@ -30,6 +31,8 @@ function liveRecord(overrides: Record<string, unknown> = {}) {
   return {
     id: "live-1",
     vendorId: "vendor-1",
+    videoId: "main-1",
+    waitingVideoId: "loop-1",
     streamMode: "vod",
     // Starts in 30 minutes: the shared runtime is "waiting".
     scheduledAt: new Date("2026-11-27T10:30:00.000Z"),
@@ -131,6 +134,37 @@ describe("resolveLiveWaitingSource", () => {
     await expect(resolveLiveWaitingSource(db as never, input)).resolves.not.toBeNull();
   });
 
+  it("serves only a loop of a known length up to 5 minutes", async () => {
+    for (const durationSec of [null, 0, 301, 3_600, 24.5]) {
+      db.live.findFirst.mockResolvedValue(liveRecord({ waitingVideo: { ...waitingVideo, durationSec } }));
+      await expect(resolveLiveWaitingSource(db as never, input)).resolves.toBeNull();
+    }
+    for (const durationSec of [1, 300]) {
+      db.live.findFirst.mockResolvedValue(liveRecord({ waitingVideo: { ...waitingVideo, durationSec } }));
+      await expect(resolveLiveWaitingSource(db as never, input)).resolves.not.toBeNull();
+    }
+  });
+
+  it("never serves the Live's own main video as the unmetered waiting loop", async () => {
+    db.live.findFirst.mockResolvedValue(liveRecord({ videoId: "loop-1", waitingVideoId: "loop-1" }));
+    await expect(resolveLiveWaitingSource(db as never, input)).resolves.toBeNull();
+  });
+
+  it("serves the loop only within 60 minutes of the viewer's start; earlier visitors keep the poster", async () => {
+    const at = (minutesAhead: number) => liveRecord({ scheduledAt: new Date(now.getTime() + minutesAhead * 60_000) });
+    db.live.findFirst.mockResolvedValue(at(61));
+    await expect(resolveLiveWaitingSource(db as never, input)).resolves.toBeNull();
+    db.live.findFirst.mockResolvedValue(at(60));
+    await expect(resolveLiveWaitingSource(db as never, input)).resolves.not.toBeNull();
+    db.live.findFirst.mockResolvedValue(at(1));
+    await expect(resolveLiveWaitingSource(db as never, input)).resolves.not.toBeNull();
+    // A day ahead: refused before any usage read.
+    db.live.findFirst.mockResolvedValue(at(24 * 60));
+    db.vendorUsageLimit.findUnique.mockClear();
+    await expect(resolveLiveWaitingSource(db as never, input)).resolves.toBeNull();
+    expect(db.vendorUsageLimit.findUnique).not.toHaveBeenCalled();
+  });
+
   it("stops answering once the show starts: the main video takes over", async () => {
     db.live.findFirst.mockResolvedValue(liveRecord({
       scheduledAt: new Date("2026-11-27T09:59:00.000Z"),
@@ -194,6 +228,24 @@ describe("resolveLiveWaitingSource", () => {
     beforeEach(() => {
       vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_ID", "0123456789abcdef0123456789abcdef");
       vi.stubEnv("CLOUDFLARE_STREAM_SIGNING_KEY_PEM", signingKey);
+    });
+
+    it("caps the token at the viewer's start plus 60 seconds", async () => {
+      db.live.findFirst.mockResolvedValue(liveRecord({
+        scheduledAt: new Date(now.getTime() + 3 * 60_000),
+        waitingVideo: {
+          ...waitingVideo,
+          sourceType: "cloudflare_stream",
+          cloudflareReadyToStream: true,
+          videoUrl: `https://videodelivery.net/${uid}/manifest/video.m3u8`,
+          cloudflareStreamUid: uid,
+          cloudflarePlaybackId: uid,
+        },
+      }));
+      const source = await resolveLiveWaitingSource(db as never, input);
+      expect(source?.expiresInSeconds).toBe(3 * 60 + 60);
+      const claims = JSON.parse(Buffer.from(new URL(source!.playbackUrl).pathname.split("/")[1]!.split(".")[1]!, "base64url").toString("utf8"));
+      expect(claims.exp).toBe(now.getTime() / 1_000 + 3 * 60 + 60);
     });
 
     it("returns a short-lived token URL for the bound uid with its lifetime, so the player renews here", async () => {

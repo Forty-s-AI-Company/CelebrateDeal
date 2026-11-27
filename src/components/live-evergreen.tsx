@@ -287,7 +287,7 @@ export function EvergreenPreparingNotice({ status }: { status: EvergreenClaimSta
       : "正在為你安排場次…";
   return (
     <div data-testid="evergreen-preparing" role="status" className="relative z-10 mx-4 mb-24 rounded-3xl border border-white/15 bg-black/45 p-6 text-center shadow-2xl backdrop-blur-md">
-      <p className="text-xs font-black uppercase tracking-[0.24em] text-white/60">自動播放場次</p>
+      <p className="text-xs font-black uppercase tracking-[0.24em] text-white/60">即將開播</p>
       <p className="mt-3 text-base font-black" aria-live="polite">{message}</p>
     </div>
   );

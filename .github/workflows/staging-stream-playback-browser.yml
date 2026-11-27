@@ -57,7 +57,7 @@ on:
           - live
           - replay
       manual_starts_at:
-        description: manual scenario, live mode only - start time in Asia/Taipei as YYYY-MM-DDTHH:mm (at least 2 minutes ahead); empty starts ~3 minutes after the Live is created
+        description: manual scenario, live mode only - start time in Asia/Taipei as YYYY-MM-DDTHH:mm (at least 2 minutes ahead; the waiting video plays only in the last 60 minutes); empty starts ~3 minutes after the Live is created
         required: false
         default: ""
         type: string

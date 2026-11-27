@@ -691,6 +691,9 @@ describe("LivePlayback checkout", () => {
       liveId: live.id,
       heroImageUrl: "https://img.example.test/poster.jpg",
       hasWaitingVideo: true,
+      // The viewer's own start and the page's server time: the backdrop asks for the loop 60 minutes before.
+      scheduledAt: waiting.scheduledAt,
+      serverNow: waiting.serverNow,
     });
     // The room's card stays on top; the main player is not mounted and its dark overlay is not doubled.
     expect(findElements(waitingTree, (element) => element.props["data-testid"] === "live-waiting-room")).toHaveLength(1);
