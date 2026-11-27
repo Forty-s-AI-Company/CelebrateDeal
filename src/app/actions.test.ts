@@ -3060,6 +3060,10 @@ describe("upsertLiveAction", () => {
     for (const videoUrl of [
       `https://videodelivery.net/${uid}/manifest/video.m3u8`,
       `https://customer-abc123.cloudflarestream.com/${uid}/manifest/video.m3u8?clientBandwidthHint=10`,
+      `https://videodelivery.net/${uid}/downloads/default.mp4`,
+      // #736 m-1: only a direct .mp4/.webm/.mov file; a manifest or page elsewhere could redirect to Stream.
+      "https://video.example.test/loop.m3u8",
+      "https://video.example.test/redirect?to=loop",
     ]) {
       mocks.liveCreate.mockClear();
       allowCurrentVendorLiveReferences();

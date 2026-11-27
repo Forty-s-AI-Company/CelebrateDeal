@@ -120,7 +120,7 @@ type LiveResourceDrawer =
   | { kind: "template"; trigger: LiveQuickTemplateTrigger; ruleTrigger?: LiveNotificationRuleTrigger };
 
 /**
- * `sourceType`, `durationSec` and `selfReportedStreamUrl` come from the server
+ * `sourceType`, `durationSec` and `selfReportedUrlRefused` come from the server
  * list (toLiveVideoOption); an option created in the studio's drawer has none,
  * so it is not offered as a waiting video until the page reloads with its
  * length known.
@@ -1064,7 +1064,7 @@ function LiveWaitingVideoField({ videos, selectedVideoId, initialWaitingVideoId 
       {clearedForMainVideo ? (
         <span id={noticeId} role="status" data-testid="waiting-video-cleared" className="text-xs font-semibold text-amber-800">{WAITING_VIDEO_CLEARED_NOTICE}</span>
       ) : null}
-      <span className="text-xs font-normal text-slate-500">需 5 分鐘以內。開播前 1 小時內進入直播間的觀眾，背景會靜音循環播放這支影片，並以直播封面當作預覽圖；開播後自動換成直播內容。只能選已上傳完成、不是直播主影片的影片。</span>
+      <span className="text-xs font-normal text-slate-500">需 5 分鐘以內。開播前 1 小時內進入直播間的觀眾，背景會靜音循環播放這支影片，並以直播封面當作預覽圖；開播後自動換成直播內容。只能選已上傳完成、不是直播主影片的影片；貼上網址的影片需是 .mp4、.webm 或 .mov 檔。</span>
     </label>
   );
 }

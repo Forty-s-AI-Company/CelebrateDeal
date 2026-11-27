@@ -577,7 +577,7 @@ function StreamQuotaAlert() {
       className="pointer-events-none absolute left-4 right-4 top-20 z-40 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-slate-950 shadow-2xl"
     >
       <p className="font-black">直播已暫停播放</p>
-      <p className="mt-1 text-sm leading-6 text-slate-700">請稍後重新整理頁面；如果一直無法觀看，可以聯絡主辦單位。</p>
+      <p className="mt-1 text-sm leading-6 text-slate-700">請聯絡主辦單位，或稍後重新整理頁面。</p>
     </div>
   );
 }

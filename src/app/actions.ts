@@ -80,7 +80,7 @@ import {
 } from "@/lib/live-publish-readiness";
 import { resolveReadyImageAsset } from "@/lib/image-assets";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
-import { isSelfReportedStreamUrlVideo, liveWaitingVideoWhere } from "@/lib/live-waiting-video";
+import { isRefusedSelfReportedWaitingUrl, liveWaitingVideoWhere } from "@/lib/live-waiting-video";
 import { parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
 import { selectPayoutAccount } from "@/lib/payout-account";
@@ -238,8 +238,8 @@ function optionalDraftReference(value: string | undefined) {
  * 開播前等候影片: the id to store, and whether a submitted id is refused: it did
  * not resolve to a short ready VOD of this vendor, it is the Live's own main
  * video (the unmetered waiting loop must never carry the show, review M-1), or
- * it is a merchant-entered URL pointing at Cloudflare Stream, whose length is
- * only self-reported (review m-A).
+ * it is a merchant-entered URL (self-reported length) that is not a direct .mp4,
+ * .webm or .mov file or points at Cloudflare Stream (review m-A, #736 m-1).
  */
 function waitingVideoBinding(
   submittedId: string | null,
@@ -247,7 +247,7 @@ function waitingVideoBinding(
   mainVideoId: string | null,
 ) {
   const missing = submittedId !== null
-    && (!resolved || submittedId === mainVideoId || isSelfReportedStreamUrlVideo(resolved));
+    && (!resolved || submittedId === mainVideoId || isRefusedSelfReportedWaitingUrl(resolved));
   return { waitingVideoId: missing ? null : resolved?.id ?? null, missing };
 }
 
@@ -676,7 +676,7 @@ async function resolveSubmittedLiveReferences(input: {
       ? input.db.partnerFunnelPage.findMany({ where: { vendorId: input.vendorId, id: { in: input.quotaPageIds } }, select: { id: true } })
       : Promise.resolve([]),
     // 開播前等候影片: a ready VOD of the current vendor up to 5 minutes long (the composite FK enforces the vendor again);
-    // the source type and URL only decide whether a self-reported URL points at Cloudflare Stream.
+    // the source type and URL only decide whether a self-reported URL is refused (not a direct file, or on Stream).
     input.waitingVideoId
       ? input.db.video.findFirst({ where: liveWaitingVideoWhere(input.vendorId, input.waitingVideoId), select: { id: true, sourceType: true, videoUrl: true } })
       : Promise.resolve(null),

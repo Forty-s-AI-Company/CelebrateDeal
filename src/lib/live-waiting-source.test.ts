@@ -185,6 +185,21 @@ describe("resolveLiveWaitingSource", () => {
     }
   });
 
+  it("serves a self-reported URL only when it is a direct .mp4, .webm or .mov file (#736 m-1)", async () => {
+    for (const videoUrl of [
+      "https://video.example.test/loop.m3u8",
+      "https://video.example.test/manifest/video.mpd",
+      "https://video.example.test/redirect?to=loop.mp4",
+    ]) {
+      db.live.findFirst.mockResolvedValue(liveRecord({ waitingVideo: { ...waitingVideo, videoUrl } }));
+      await expect(resolveLiveWaitingSource(db as never, input), videoUrl).resolves.toBeNull();
+    }
+    for (const videoUrl of ["https://video.example.test/loop.webm", "https://video.example.test/loop.mov?v=1"]) {
+      db.live.findFirst.mockResolvedValue(liveRecord({ waitingVideo: { ...waitingVideo, videoUrl } }));
+      await expect(resolveLiveWaitingSource(db as never, input), videoUrl).resolves.toEqual({ playbackUrl: videoUrl });
+    }
+  });
+
   it("uses the viewer's own fixed session, not Live.scheduledAt, for the 60-minute window (NIT 3)", async () => {
     // The shared start is 30 minutes ahead (inside the window) ...
     const fixedLive = liveRecord({ sessionMode: "fixed_sessions", scheduledAt: new Date(now.getTime() + 30 * 60_000) });

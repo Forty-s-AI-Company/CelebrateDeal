@@ -1017,8 +1017,8 @@ describe("LiveStepperForm 開播前等候影片", () => {
   it("never offers a merchant-entered URL that points at Cloudflare Stream (review m-A)", async () => {
     const videos = [
       ...mixedVideos,
-      { id: "video-url-stream", title: "貼上的 Stream 網址", sourceType: "url", durationSec: 60, selfReportedStreamUrl: true },
-      { id: "video-cf-stream", title: "上傳的短片", sourceType: "cloudflare_stream", durationSec: 60, selfReportedStreamUrl: false },
+      { id: "video-url-stream", title: "貼上的 Stream 網址", sourceType: "url", durationSec: 60, selfReportedUrlRefused: true },
+      { id: "video-cf-stream", title: "上傳的短片", sourceType: "cloudflare_stream", durationSec: 60, selfReportedUrlRefused: false },
     ];
     await act(async () => { root.render(<LiveStepperForm {...resources} videos={videos} />); });
     expect(Array.from(control<HTMLSelectElement>('select[name="waitingVideoId"]').options).map((option) => option.value))

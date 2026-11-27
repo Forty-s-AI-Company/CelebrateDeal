@@ -429,6 +429,9 @@ describe("PublicLivePage", () => {
       expect(await waitingRender({ ...loop, sourceType: "url", cloudflareReadyToStream: false })).not.toHaveProperty("hasWaitingVideo");
       expect(await waitingRender({ ...loop, sourceType: "url", cloudflareReadyToStream: false, videoUrl: "https://video.example.test/loop.mp4" }))
         .toHaveProperty("hasWaitingVideo", true);
+      // #736 m-1: a self-reported URL must be a direct video file, not a manifest.
+      expect(await waitingRender({ ...loop, sourceType: "url", cloudflareReadyToStream: false, videoUrl: "https://video.example.test/loop.m3u8" }))
+        .not.toHaveProperty("hasWaitingVideo");
     });
   });
 

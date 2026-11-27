@@ -64,7 +64,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   const requestedDraftId = typeof draft === "string" && /^[a-z0-9_-]{1,128}$/iu.test(draft) ? draft : "";
   const db = getDb();
   const draftLookupAt = new Date();
-  // The URL stays on the server: the studio only learns whether a self-reported URL points at Cloudflare Stream.
+  // The URL stays on the server: the studio only learns whether a self-reported URL is refused (not a direct file, or on Stream).
   const videos = (await db.video.findMany({
     where: liveReadyVideoWhere(vendor.id),
     select: { id: true, title: true, sourceType: true, durationSec: true, videoUrl: true },

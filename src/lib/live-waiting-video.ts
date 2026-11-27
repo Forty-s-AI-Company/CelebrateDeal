@@ -9,8 +9,11 @@ import { isExistingLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-vi
  * - 只接受點播影片（`url`、`cloudflare_stream`）：即時直播輸入或瀏覽器直播不能當背景循環。
  * - 只接受 5 分鐘以內、長度已知的影片，而且不能是這場的主影片：等候影片不入場、
  *   不計量，不能被拿來免費、不限人數地播放完整內容（PR #734 審查 M-1）。
- * - 商家自填網址（`url`）的影片不能指向 Cloudflare Stream：長度是商家自己填的，
- *   填 60 秒卻指向 2 小時的 Stream manifest 就能繞過 5 分鐘上限（PR #734 審查 m-A）。
+ * - 商家自填網址（`url`）的影片長度是商家自己填的：只接受路徑以 `.mp4`、`.webm`、
+ *   `.mov` 結尾的直接影片檔（不接受 `.m3u8` 或其他 manifest，避免轉址或 manifest
+ *   指到 Stream），而且不能指向 Cloudflare Stream：填 60 秒卻指向 2 小時的 Stream
+ *   影片就能繞過 5 分鐘上限（PR #734 審查 m-A、#736 審查 m-1）。商家自己主機上的
+ *   長檔仍可自報長度，是已知的殘留風險（見 PRISMA_INVARIANTS）。
  * - 只在這位觀眾的開播時間前 60 分鐘內提供，更早只顯示海報。
  * - 簽章與端點的窗口在開播時間後還有一段寬限：VOD、預錄排程、常青場與指定場次
  *   60 秒（開播後主影片接手）；手動開播的即時直播（OBS、瀏覽器推流）30 分鐘，
@@ -46,13 +49,31 @@ export function isCloudflareStreamHostedUrl(value: string | null | undefined) {
   return CLOUDFLARE_STREAM_HOSTS.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
 }
 
+/** Direct video files a merchant-entered waiting video may point at; no HLS/DASH manifest or page. */
+const DIRECT_VIDEO_FILE_EXTENSIONS = [".mp4", ".webm", ".mov"] as const;
+
+/** True when the URL's path (query and fragment ignored) ends in .mp4, .webm or .mov; an unparsable value is not. */
+export function isDirectVideoFileUrl(value: string | null | undefined) {
+  if (typeof value !== "string") return false;
+  let pathname: string;
+  try {
+    pathname = new URL(value.trim()).pathname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return DIRECT_VIDEO_FILE_EXTENSIONS.some((extension) => pathname.endsWith(extension));
+}
+
 /**
- * A merchant-entered (`url`) video whose address is a Cloudflare Stream URL:
- * its length is self-reported, so it cannot vouch for the 5-minute limit.
- * Provider rows (`cloudflare_stream`) take their length from Cloudflare.
+ * A merchant-entered (`url`) video that cannot be a waiting video: its length
+ * is self-reported, so it must be a direct video file and must not be on
+ * Cloudflare Stream (a Stream download is also an .mp4). Fails closed: a
+ * missing or unparsable URL is refused. Provider rows (`cloudflare_stream`)
+ * take their length from Cloudflare and are never refused here.
  */
-export function isSelfReportedStreamUrlVideo(video: { sourceType?: string | null; videoUrl?: string | null }) {
-  return video.sourceType === "url" && isCloudflareStreamHostedUrl(video.videoUrl);
+export function isRefusedSelfReportedWaitingUrl(video: { sourceType?: string | null; videoUrl?: string | null }) {
+  return video.sourceType === "url"
+    && (isCloudflareStreamHostedUrl(video.videoUrl) || !isDirectVideoFileUrl(video.videoUrl));
 }
 
 /** New bindings: a ready, same-vendor VOD of a known length up to 5 minutes (the stepper options and the publish action). */
@@ -80,26 +101,26 @@ export function isWaitingVideoDurationAllowed(durationSec: number | null | undef
 
 /**
  * A stepper option, as the server hands it to the studio: the video's URL
- * stays on the server and only whether it is a self-reported Stream URL is sent.
+ * stays on the server and only whether a self-reported URL is refused is sent.
  */
 export type WaitingVideoOptionFields = {
   sourceType?: string;
   durationSec?: number | null;
-  /** Set on the server by toLiveVideoOption; a `url` video pointing at Cloudflare Stream. */
-  selfReportedStreamUrl?: boolean;
+  /** Set on the server by toLiveVideoOption: a `url` video that is not a direct file, or is on Cloudflare Stream. */
+  selfReportedUrlRefused?: boolean;
 };
 
 /** A stepper option that can be offered as the waiting video. */
 export function isWaitingVideoOption(video: WaitingVideoOptionFields) {
   return isWaitingVideoSourceType(video.sourceType)
     && isWaitingVideoDurationAllowed(video.durationSec)
-    && video.selfReportedStreamUrl !== true;
+    && video.selfReportedUrlRefused !== true;
 }
 
-/** Server side: drops the video URL from a studio option and keeps only the Stream-URL flag. */
+/** Server side: drops the video URL from a studio option and keeps only the refused-URL flag. */
 export function toLiveVideoOption<T extends { sourceType: string; videoUrl: string }>(video: T) {
   const { videoUrl, ...option } = video;
-  return { ...option, selfReportedStreamUrl: isSelfReportedStreamUrlVideo({ sourceType: video.sourceType, videoUrl }) };
+  return { ...option, selfReportedUrlRefused: isRefusedSelfReportedWaitingUrl({ sourceType: video.sourceType, videoUrl }) };
 }
 
 /**
@@ -118,7 +139,7 @@ export function isWaitingVideoPlayable(
     && video.vendorId === live.vendorId
     && isWaitingVideoSourceType(video.sourceType)
     && isWaitingVideoDurationAllowed(video.durationSec)
-    && !isSelfReportedStreamUrlVideo(video)
+    && !isRefusedSelfReportedWaitingUrl(video)
     && isExistingLiveVideoReady(video),
   );
 }

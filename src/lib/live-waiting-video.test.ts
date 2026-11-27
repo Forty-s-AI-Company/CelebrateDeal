@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { parseCloudflareStreamUrl } from "@/lib/cloudflare-stream-signing";
 import {
   isCloudflareStreamHostedUrl,
-  isSelfReportedStreamUrlVideo,
+  isDirectVideoFileUrl,
+  isRefusedSelfReportedWaitingUrl,
   isWaitingVideoOption,
   isWaitingVideoPlayable,
   isWithinWaitingVideoWindow,
@@ -49,14 +50,64 @@ describe("isCloudflareStreamHostedUrl (review m-A)", () => {
   });
 
   it("refuses only a merchant-entered URL; provider rows take their length from Cloudflare", () => {
-    expect(isSelfReportedStreamUrlVideo({ sourceType: "url", videoUrl: streamUrls[0] })).toBe(true);
-    expect(isSelfReportedStreamUrlVideo({ sourceType: "cloudflare_stream", videoUrl: streamUrls[0] })).toBe(false);
-    expect(isSelfReportedStreamUrlVideo({ sourceType: "url", videoUrl: "https://video.example.test/loop.mp4" })).toBe(false);
+    expect(isRefusedSelfReportedWaitingUrl({ sourceType: "url", videoUrl: streamUrls[0] })).toBe(true);
+    expect(isRefusedSelfReportedWaitingUrl({ sourceType: "cloudflare_stream", videoUrl: streamUrls[0] })).toBe(false);
+    expect(isRefusedSelfReportedWaitingUrl({ sourceType: "url", videoUrl: "https://video.example.test/loop.mp4" })).toBe(false);
+  });
+});
+
+const directFiles = [
+  "https://video.example.test/loop.mp4",
+  "https://video.example.test/loop.webm",
+  "https://video.example.test/Loop.MOV",
+  "https://video.example.test/path/loop.mp4?v=2#t=3",
+];
+const notDirectFiles = [
+  "https://video.example.test/loop.m3u8",
+  "https://video.example.test/manifest/video.mpd",
+  "https://video.example.test/watch?v=loop.mp4",
+  "https://video.example.test/loop.mp4/",
+  "https://video.example.test/loop",
+  "https://video.example.test/loop.mp4.m3u8",
+  "not a url",
+  "",
+  null,
+  undefined,
+];
+
+describe("self-reported waiting URLs must be direct video files (#736 m-1)", () => {
+  it("accepts only a path ending in .mp4, .webm or .mov", () => {
+    for (const url of directFiles) expect(isDirectVideoFileUrl(url), url).toBe(true);
+    for (const url of notDirectFiles) expect(isDirectVideoFileUrl(url), String(url)).toBe(false);
   });
 
+  it("refuses a manifest, a page or a missing URL, and a Stream download even though it is an .mp4", () => {
+    for (const videoUrl of directFiles) expect(isRefusedSelfReportedWaitingUrl({ sourceType: "url", videoUrl }), videoUrl).toBe(false);
+    for (const videoUrl of notDirectFiles) expect(isRefusedSelfReportedWaitingUrl({ sourceType: "url", videoUrl }), String(videoUrl)).toBe(true);
+    expect(isRefusedSelfReportedWaitingUrl({ sourceType: "url", videoUrl: `https://videodelivery.net/${uid}/downloads/default.mp4` })).toBe(true);
+    // Provider rows are judged by Cloudflare's own length, not by their URL.
+    expect(isRefusedSelfReportedWaitingUrl({ sourceType: "cloudflare_stream", videoUrl: `https://videodelivery.net/${uid}/manifest/video.m3u8` })).toBe(false);
+  });
+
+  it("applies to the studio options and to playback", () => {
+    const live = { vendorId: "vendor-1", videoId: "main-1", waitingVideoId: "loop-1" };
+    const video = {
+      vendorId: "vendor-1", sourceType: "url", status: "ready", durationSec: 60,
+      cloudflareReadyToStream: false, cloudflareLiveInputUid: null, liveInputStatus: null,
+    };
+    for (const videoUrl of ["https://video.example.test/loop.m3u8", "https://video.example.test/redirect?to=loop"]) {
+      expect(isWaitingVideoOption(toLiveVideoOption({ id: "v", title: "t", sourceType: "url", durationSec: 60, videoUrl })), videoUrl).toBe(false);
+      expect(isWaitingVideoPlayable({ ...video, videoUrl }, live), videoUrl).toBe(false);
+    }
+    expect(isWaitingVideoOption(toLiveVideoOption({ id: "v", title: "t", sourceType: "url", durationSec: 60, videoUrl: "https://video.example.test/loop.webm" }))).toBe(true);
+    expect(isWaitingVideoPlayable({ ...video, videoUrl: "https://video.example.test/loop.webm" }, live)).toBe(true);
+  });
+});
+
+describe("studio options and playback (review m-A)", () => {
   it("drops the URL from a studio option and keeps only the flag", () => {
     const option = toLiveVideoOption({ id: "v-1", title: "等候", sourceType: "url", durationSec: 60, videoUrl: streamUrls[0]! });
-    expect(option).toEqual({ id: "v-1", title: "等候", sourceType: "url", durationSec: 60, selfReportedStreamUrl: true });
+    expect(option).toEqual({ id: "v-1", title: "等候", sourceType: "url", durationSec: 60, selfReportedUrlRefused: true });
     expect(isWaitingVideoOption(option)).toBe(false);
 
     const plain = toLiveVideoOption({ id: "v-2", title: "等候", sourceType: "url", durationSec: 60, videoUrl: "https://video.example.test/loop.mp4" });

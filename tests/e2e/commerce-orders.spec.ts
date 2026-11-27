@@ -1728,8 +1728,8 @@ test("desktop merchant can recover upload and validation errors, then publish an
 
     const quotaAlert = page.getByRole("alert").filter({ hasText: "直播已暫停播放" });
     await expect(quotaAlert).toBeVisible();
-    await expect(quotaAlert).toContainText("請稍後重新整理頁面");
-    await expect(quotaAlert).toContainText("可以聯絡主辦單位");
+    await expect(quotaAlert).toContainText("稍後重新整理頁面");
+    await expect(quotaAlert).toContainText("請聯絡主辦單位");
     await expect(video).toHaveCount(0);
     expect(await page.evaluate(() => (window as typeof window & { __quotaPauseCalls?: number }).__quotaPauseCalls)).toBe(1);
     expect(heartbeatRequests).toBe(1);

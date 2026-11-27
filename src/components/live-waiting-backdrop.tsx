@@ -55,6 +55,30 @@ const WINDOW_OPEN_MARGIN_MS = 1_000;
 export const WAITING_VIDEO_RETRY_DELAYS_MS = [5_000, 30_000] as const;
 
 /**
+ * The request state of one Live's waiting source, kept across rerenders: the
+ * watch page refreshes every 2 seconds once the start has passed (each render
+ * brings a new `serverNow`), and neither that nor a changed `scheduledAt` may
+ * fetch again, re-sign, reattach the video or reset the retry count (#736 M-1).
+ */
+type WaitingSourceRequests = {
+  scope: string;
+  /** Requests that got no source. */
+  failures: number;
+  /** Served (renewal is attachHlsPlayback's job from here), or given up after the last retry. */
+  done: boolean;
+  inFlight: boolean;
+  /** An effect of a mounted backdrop owns this state; a response that lands without one is dropped. */
+  active: boolean;
+  /** When the next request is due on this device's clock; null while one is in flight or none is due. */
+  nextAt: number | null;
+  timer: ReturnType<typeof setTimeout> | null;
+};
+
+function freshRequests(scope: string): WaitingSourceRequests {
+  return { scope, failures: 0, done: false, inFlight: false, active: false, nextAt: null, timer: null };
+}
+
+/**
  * Milliseconds (from now, on this device) until the waiting video may be asked
  * for: 60 minutes before the viewer's own start, measured on the server clock
  * the page was rendered with. Without both times the server alone decides (0).
@@ -85,7 +109,8 @@ function playMuted(video: HTMLVideoElement) {
  * only a sound toggle. The video is served only within 60 minutes of the
  * viewer's own start: an earlier visitor sees the poster, and the source is
  * asked for by itself when that window opens; a first request that gets no
- * source is retried after 5 and 30 seconds. When the room closes (the show starts) this unmounts:
+ * source is retried after 5 and 30 seconds. One Live's source is asked for once
+ * per mount, whatever rerenders follow. When the room closes (the show starts) this unmounts:
  * hls.js is destroyed, the renewal stops and the element's source is dropped
  * before the main player takes over.
  */
@@ -111,48 +136,70 @@ export function LiveWaitingBackdrop({
   const scope = `${vendorId}:${liveId}`;
   const source = hasWaitingVideo && sourceState.scope === scope ? sourceState.source : null;
   const poster = parseSafeExternalHttpUrl(heroImageUrl);
+  // Read only when the first request is planned, never a reason to plan again.
+  const serverNowRef = useRef(serverNow);
+  const requestsRef = useRef<WaitingSourceRequests>(freshRequests(""));
+
+  useEffect(() => {
+    serverNowRef.current = serverNow;
+  }, [serverNow]);
 
   useEffect(() => {
     if (!hasWaitingVideo) return;
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let failures = 0;
-    // No source (403, a bad payload) or a network error: retry after 5 s, then 30 s, then keep the poster.
-    const retryOrGiveUp = () => {
-      const delay = WAITING_VIDEO_RETRY_DELAYS_MS[failures];
-      failures += 1;
-      if (delay === undefined) {
-        setSourceState({ scope, source: null });
-        return;
-      }
-      timer = setTimeout(load, delay);
-    };
-    const load = () => {
-      timer = null;
-      void fetchLiveWaitingSource(vendorId, liveId)
-        .then((next) => {
-          if (disposed) return;
-          if (next) setSourceState({ scope, source: next });
-          else retryOrGiveUp();
-        })
-        .catch(() => { if (!disposed) retryOrGiveUp(); });
-    };
-    // Before the 60-minute window only the poster shows; the source is asked for when it opens.
-    const openAt = Date.now() + waitingVideoFetchDelayMs(scheduledAt, serverNow);
+    if (requestsRef.current.scope !== scope) requestsRef.current = freshRequests(scope);
+    const requests = requestsRef.current;
+    if (requests.done) return;
+    requests.active = true;
+    if (requests.failures === 0 && !requests.inFlight) {
+      // Before the 60-minute window only the poster shows; the source is asked for when it opens.
+      requests.nextAt = Date.now() + waitingVideoFetchDelayMs(scheduledAt, serverNowRef.current);
+    }
     const arm = () => {
-      const remaining = openAt - Date.now();
+      if (requests.nextAt === null) return;
+      const remaining = requests.nextAt - Date.now();
       if (remaining <= 0) {
+        requests.nextAt = null;
         load();
         return;
       }
-      timer = setTimeout(arm, Math.min(remaining, MAX_TIMER_DELAY_MS));
+      requests.timer = setTimeout(() => {
+        requests.timer = null;
+        arm();
+      }, Math.min(remaining, MAX_TIMER_DELAY_MS));
     };
-    arm();
+    function load() {
+      requests.inFlight = true;
+      void fetchLiveWaitingSource(vendorId, liveId)
+        .catch(() => null)
+        .then((next) => {
+          requests.inFlight = false;
+          // Unmounted, the room closed or another Live: drop the answer.
+          if (!requests.active || requestsRef.current !== requests) return;
+          if (next) {
+            requests.done = true;
+            setSourceState({ scope: requests.scope, source: next });
+            return;
+          }
+          // No source (403, a bad payload) or a network error: retry after 5 s, then 30 s, then keep the poster.
+          const delay = WAITING_VIDEO_RETRY_DELAYS_MS[requests.failures];
+          requests.failures += 1;
+          if (delay === undefined) {
+            requests.done = true;
+            setSourceState({ scope: requests.scope, source: null });
+            return;
+          }
+          requests.nextAt = Date.now() + delay;
+          arm();
+        });
+    }
+    // A request already in flight answers into the same state; only a due one is (re)armed.
+    if (!requests.inFlight) arm();
     return () => {
-      disposed = true;
-      if (timer !== null) clearTimeout(timer);
+      requests.active = false;
+      if (requests.timer !== null) clearTimeout(requests.timer);
+      requests.timer = null;
     };
-  }, [hasWaitingVideo, liveId, scheduledAt, scope, serverNow, vendorId]);
+  }, [hasWaitingVideo, liveId, scheduledAt, scope, vendorId]);
 
   useEffect(() => {
     const video = videoRef.current;

@@ -1135,7 +1135,7 @@ describe("LivePlayback checkout", () => {
 
     expect(video).toBeUndefined();
     expect(alerts.map((alert) => textContent(alert))).toContain(
-      "直播已暫停播放請稍後重新整理頁面；如果一直無法觀看，可以聯絡主辦單位。",
+      "直播已暫停播放請聯絡主辦單位，或稍後重新整理頁面。",
     );
     // D-47: viewers never see quota wording.
     expect(alerts.map((alert) => textContent(alert)).join("")).not.toMatch(/額度/);

@@ -151,7 +151,7 @@ function prepareLiveEditorResources(input: {
  */
 function prepareWaitingVideoForEditor(
   live: { waitingVideoId: string | null; videoId: string | null },
-  videos: Array<{ id: string; sourceType: string; durationSec: number; selfReportedStreamUrl: boolean }>,
+  videos: Array<{ id: string; sourceType: string; durationSec: number; selfReportedUrlRefused: boolean }>,
 ): { unavailable: boolean; payloadFields: { waitingVideoId?: string } } {
   const waitingVideoId = live.waitingVideoId;
   if (!waitingVideoId) return { unavailable: false, payloadFields: {} };
@@ -302,7 +302,7 @@ export default async function EditLivePage({
     }),
   ]);
   if (!live) notFound();
-  // The URL stays on the server: the studio only learns whether a self-reported URL points at Cloudflare Stream.
+  // The URL stays on the server: the studio only learns whether a self-reported URL is refused (not a direct file, or on Stream).
   const videos = videoRows.map(toLiveVideoOption);
 
   // Keep the edit surface tolerant while a shared worktree's generated Prisma
