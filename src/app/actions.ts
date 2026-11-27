@@ -80,6 +80,7 @@ import {
 } from "@/lib/live-publish-readiness";
 import { resolveReadyImageAsset } from "@/lib/image-assets";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
+import { liveWaitingVideoWhere } from "@/lib/live-waiting-video";
 import { parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import { canMarkPayoutBatchExported, canTransitionPayoutItem, derivePayoutBatchStatus, PayoutItemTargetStatus } from "@/lib/payout-state";
 import { selectPayoutAccount } from "@/lib/payout-account";
@@ -199,6 +200,7 @@ function hasInvalidLiveReferences(input: {
   productCount: number;
   expectedProductCount: number;
   videoMissing: boolean;
+  waitingVideoMissing: boolean;
   formMissing: boolean;
   templateMissing: boolean;
   reminderTemplateMissing: boolean;
@@ -211,6 +213,7 @@ function hasInvalidLiveReferences(input: {
   return input.liveMissing
     || input.productCount !== input.expectedProductCount
     || input.videoMissing
+    || input.waitingVideoMissing
     || input.formMissing
     || input.templateMissing
     || input.reminderTemplateMissing
@@ -227,8 +230,18 @@ function isMissingDefaultAffiliate(
   return code !== null && affiliate === null;
 }
 
-function optionalDraftReference(value: string) {
+function optionalDraftReference(value: string | undefined) {
   return value ? value : null;
+}
+
+/**
+ * 開播前等候影片: the id to store, and whether a submitted id is refused: it did
+ * not resolve to a short ready VOD of this vendor, or it is the Live's own main
+ * video (the unmetered waiting loop must never carry the show, review M-1).
+ */
+function waitingVideoBinding(submittedId: string | null, resolved: { id: string } | null, mainVideoId: string | null) {
+  const missing = submittedId !== null && (!resolved || submittedId === mainVideoId);
+  return { waitingVideoId: missing ? null : resolved?.id ?? null, missing };
 }
 
 type LiveMutationData = {
@@ -245,6 +258,7 @@ type LiveMutationData = {
   interactionScriptId: string | null;
   heroImageUrl: string | null;
   heroImageAssetId: string | null;
+  waitingVideoId: string | null;
   accentCopy: string | null;
   replayEnabled: boolean;
   replayAvailableUntil: Date | null;
@@ -574,10 +588,11 @@ async function resolveSubmittedLiveReferences(input: {
   interactionScriptId: string | null;
   defaultAffiliateCode: string | null;
   heroImageAssetId: string | null;
+  waitingVideoId: string | null;
   quotaPageIds: string[];
   invalidReferencePath: string;
 }) {
-  const [existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, notificationTemplates, interactionScript, defaultAffiliate, heroImageAsset, quotaPages] = await Promise.all([
+  const [existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, notificationTemplates, interactionScript, defaultAffiliate, heroImageAsset, quotaPages, waitingVideo] = await Promise.all([
     input.liveId
       ? input.db.live.findFirst({
           where: { id: input.liveId, vendorId: input.vendorId },
@@ -653,8 +668,12 @@ async function resolveSubmittedLiveReferences(input: {
     input.quotaPageIds.length > 0
       ? input.db.partnerFunnelPage.findMany({ where: { vendorId: input.vendorId, id: { in: input.quotaPageIds } }, select: { id: true } })
       : Promise.resolve([]),
+    // 開播前等候影片: a ready VOD of the current vendor up to 5 minutes long (the composite FK enforces the vendor again).
+    input.waitingVideoId
+      ? input.db.video.findFirst({ where: liveWaitingVideoWhere(input.vendorId, input.waitingVideoId), select: { id: true } })
+      : Promise.resolve(null),
   ]);
-  return { existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, notificationTemplates, interactionScript, defaultAffiliate, heroImageAsset, quotaPages };
+  return { existingLive, products, video, registrationForm, messageTemplate, liveReminderTemplate, notificationTemplates, interactionScript, defaultAffiliate, heroImageAsset, quotaPages, waitingVideo };
 }
 
 function requireSubmittedLivePublishReadiness(input: {
@@ -852,11 +871,12 @@ export async function upsertLiveAction(formData: FormData) {
   const messageTemplateId = optionalDraftReference(submittedDraft.messageTemplateId);
   const interactionScriptId = optionalDraftReference(submittedDraft.interactionScriptId);
   const heroImageAssetId = optionalDraftReference(submittedDraft.heroImageAssetId);
+  const waitingVideoId = optionalDraftReference(submittedDraft.waitingVideoId);
   const quotaPolicy = parseSubmittedLiveQuotaPolicy(submittedDraft, id, createDraftSuffix);
   const invalidReferencePath = id
     ? `/lives/${encodeURIComponent(id)}/edit?error=invalid_reference`
     : `/lives/new?error=invalid_reference${createDraftSuffix}`;
-  const referenceIds = [id, videoId, formId, messageTemplateId, interactionScriptId, heroImageAssetId, ...productIds, ...notificationRules.map((rule) => rule.messageTemplateId)].filter(
+  const referenceIds = [id, videoId, formId, messageTemplateId, interactionScriptId, heroImageAssetId, waitingVideoId, ...productIds, ...notificationRules.map((rule) => rule.messageTemplateId)].filter(
     (value): value is string => value !== null,
   );
   if (productIds.length > 100 || rawProductIds.length !== productIds.length || referenceIds.some((value) => value.length > 128)) {
@@ -882,6 +902,7 @@ export async function upsertLiveAction(formData: FormData) {
     interactionScriptId,
     defaultAffiliateCode: quotaPolicy.defaultAffiliateCode,
     heroImageAssetId,
+    waitingVideoId,
     quotaPageIds,
     invalidReferencePath,
   });
@@ -897,7 +918,9 @@ export async function upsertLiveAction(formData: FormData) {
     defaultAffiliate,
     heroImageAsset,
     quotaPages,
+    waitingVideo,
   } = references;
+  const waitingVideoBound = waitingVideoBinding(waitingVideoId, waitingVideo, videoId);
   void ignoredSubmittedReminderTemplate;
   // 排除條件只用已驗證屬於目前 vendor 的 live，避免用別人的 live id 探測 slug 歸屬。
   await requireLiveSlugAvailable(db, { vendorId: vendor.id, slug: parsedSubmission.slug, existingLive, draftClaim, slugTakenPath });
@@ -933,6 +956,7 @@ export async function upsertLiveAction(formData: FormData) {
     productCount: products.length,
     expectedProductCount: productIds.length,
     videoMissing: videoId !== null && !video,
+    waitingVideoMissing: waitingVideoBound.missing,
     formMissing: formId !== null && !registrationForm,
     templateMissing: messageTemplateId !== null && !messageTemplate,
     reminderTemplateMissing: authoritativeReminder.missing,
@@ -1006,6 +1030,7 @@ export async function upsertLiveAction(formData: FormData) {
     interactionScriptId,
     heroImageUrl,
     heroImageAssetId: heroImageAsset?.id ?? null,
+    waitingVideoId: waitingVideoBound.waitingVideoId,
     accentCopy: submittedDraft.accentCopy || null,
     replayEnabled: submittedDraft.replayEnabled,
     replayAvailableUntil: parsedSubmission.replayAvailableUntil,

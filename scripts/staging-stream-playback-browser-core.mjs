@@ -53,6 +53,31 @@ export const MANUAL_FIXTURE = Object.freeze({
   uploadFileName: "staging-stream-manual-demo.mp4",
 });
 
+/**
+ * Manual scenario only: the waiting-room loop (owner 2026-11-27) bound as the Live's 開播前等候影片,
+ * 24 seconds, 640x360, 15 fps, 「等候中」 with the loop position and a ticking bar, silent-ish tone.
+ * See scripts/fixtures/staging-stream-waiting-loop.md.
+ */
+export const WAITING_LOOP_FIXTURE = Object.freeze({
+  videoFile: "fixtures/staging-stream-waiting-loop.mp4",
+  videoBytes: 216405,
+  videoSha256: "b2fdba87b8e331d12517ce5553486d4c46dd41ecb550d4587f0d21dd098d9251",
+  videoDurationSeconds: 24,
+  videoTitle: "Stream Playback QA Waiting Loop 24s v1",
+  uploadFileName: "staging-stream-waiting-loop.mp4",
+});
+
+/**
+ * Manual scenario only: the poster (直播封面) shown behind the waiting room, 1280x720 JPEG that reads
+ * 「即將開播」. Uploaded through the studio's own image field. See scripts/fixtures/staging-stream-poster.md.
+ */
+export const POSTER_FIXTURE = Object.freeze({
+  imageFile: "fixtures/staging-stream-poster.jpg",
+  imageBytes: 39183,
+  imageSha256: "645b2f9ac26002a613a0479c20d7e218d1065d97a9d77bc6b937677229730092",
+  uploadFileName: "staging-stream-poster.jpg",
+});
+
 /** The video fixture a scenario uses: only manual switches to the recognisable demo video. */
 export function videoFixtureFor(scenario) {
   if (scenario === "manual") return MANUAL_FIXTURE;
@@ -88,6 +113,24 @@ export const MANUAL_MODES = Object.freeze(["live", "replay"]);
 export const MANUAL_MODE_DEFAULT = "live";
 /** Manual live mode: the scheduled start is this many minutes after creation (rounded up to a whole minute). */
 export const MANUAL_LIVE_START_MINUTES = 3;
+/** Manual live mode with manual_starts_at: the requested start must be at least this far ahead. */
+export const MANUAL_STARTS_AT_MIN_LEAD_MINUTES = 2;
+const TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1_000;
+
+/**
+ * manual_starts_at (Asia/Taipei wall clock, `YYYY-MM-DDTHH:mm`, Taiwan has no DST): empty means
+ * "not given" (undefined), a well-formed real minute is that instant, anything else is null.
+ */
+export function parseManualStartsAt(value) {
+  if (value === undefined || value === null || String(value).trim() === "") return undefined;
+  const text = String(value).trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/u.exec(text);
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match.map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute) - TAIPEI_OFFSET_MS);
+  // Round trip rejects 2026-02-30, 24:00, 12:60 and similar.
+  return Number.isFinite(date.getTime()) && taipeiDateTimeLocal(date) === text ? date : null;
+}
 
 /** Manual mode: empty means live, anything but live/replay is null. */
 export function parseManualMode(value) {
@@ -99,11 +142,18 @@ export function parseManualMode(value) {
 /**
  * Manual live mode schedule: the pre-recorded video starts at startsAt (whole minute), ends after the
  * video length, and its replay then stays open for manualHours (the studio requires the replay
- * deadline to be later than the natural end).
+ * deadline to be later than the natural end). Without requestedStartsAt the start is about 3 minutes
+ * ahead; a requested start (manual_starts_at) is used as given and must be at least 2 minutes ahead,
+ * otherwise the schedule is null.
  */
-export function manualLiveSchedule(nowMs, manualHours = MANUAL_HOURS_DEFAULT, durationSeconds = MANUAL_FIXTURE.videoDurationSeconds) {
+export function manualLiveSchedule(nowMs, manualHours = MANUAL_HOURS_DEFAULT, durationSeconds = MANUAL_FIXTURE.videoDurationSeconds, requestedStartsAt = undefined) {
   const minute = 60_000;
-  const startsAt = new Date(Math.ceil((nowMs + MANUAL_LIVE_START_MINUTES * minute) / minute) * minute);
+  if (requestedStartsAt !== undefined
+    && (!(requestedStartsAt instanceof Date) || !Number.isFinite(requestedStartsAt.getTime())
+      || requestedStartsAt.getTime() < nowMs + MANUAL_STARTS_AT_MIN_LEAD_MINUTES * minute)) return null;
+  const startsAt = requestedStartsAt !== undefined
+    ? new Date(requestedStartsAt.getTime())
+    : new Date(Math.ceil((nowMs + MANUAL_LIVE_START_MINUTES * minute) / minute) * minute);
   const endsAt = new Date(startsAt.getTime() + durationSeconds * 1_000);
   const replayUntil = new Date(Math.ceil((endsAt.getTime() + manualHours * 60 * minute) / minute) * minute);
   return { startsAt, endsAt, replayUntil };
@@ -572,7 +622,12 @@ const OWNER_WRITE_PATHS = [
   /^\/forms\/new$/u, /^\/messages\/templates\/new$/u, /^\/api\/interaction-scripts\/upsert$/u,
   /^\/lives\/new$/u, /^\/api\/live-studio\/drafts$/u, /^\/api\/media\/videos\/direct-upload$/u,
   /^\/videos\/[A-Za-z0-9_-]{1,128}\/edit$/u,
+  // The studio's poster field (manual scenario): image presign and completion.
+  /^\/api\/media\/images\/presign$/u, /^\/api\/media\/images\/complete$/u,
 ];
+/** The poster's one signed PUT goes only to one synthetic object in the dedicated staging bucket. */
+const R2_STAGING_UPLOAD_HOST = /^celebrate-deal-staging\.[a-f0-9]{32}\.r2\.cloudflarestorage\.com$/u;
+const R2_IMAGE_OBJECT_PATH = /^\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$/u;
 /** The viewer's own playback writes: admission (and its release) and the usage heartbeat. */
 const VIEWER_WRITE = [
   { method: "POST", path: /^\/api\/live-admission$/u },
@@ -590,6 +645,12 @@ export function classifyRequest({ url, method, postData = null }, actor) {
   const upper = String(method).toUpperCase();
   if (parsed.protocol === "https:" && isStreamDeliveryHost(parsed.hostname)) {
     return upper === "GET" || upper === "HEAD" ? "STREAM" : "BLOCK";
+  }
+  if (actor === "owner" && parsed.protocol === "https:" && !parsed.port && !parsed.username && !parsed.password
+    && R2_STAGING_UPLOAD_HOST.test(parsed.hostname) && R2_IMAGE_OBJECT_PATH.test(parsed.pathname)) {
+    if (upper === "OPTIONS") return "READ";
+    if (upper === "PUT" && parsed.searchParams.has("X-Amz-Signature")) return "WRITE";
+    return "BLOCK";
   }
   if (parsed.protocol !== "https:" || parsed.hostname !== ALIAS || parsed.port || parsed.username || parsed.password) return "EXTERNAL";
   const path = parsed.pathname;
@@ -646,11 +707,16 @@ export function createReceipt(env = {}) {
   const scenario = SCENARIOS.includes(env.CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO) ? env.CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO : "full";
   const manualHours = scenario === "manual" ? parseManualHours(env.CELEBRATEDEAL_STREAM_MANUAL_HOURS) : null;
   const manualMode = scenario === "manual" ? parseManualMode(env.CELEBRATEDEAL_STREAM_MANUAL_MODE) : null;
+  // undefined = not given; null = malformed, or given for a mode other than live (rejected before any browser).
+  const requestedStartsAt = scenario === "manual" ? parseManualStartsAt(env.CELEBRATEDEAL_STREAM_MANUAL_STARTS_AT) : undefined;
+  const manualStartsAt = requestedStartsAt === undefined ? undefined
+    : requestedStartsAt === null || manualMode !== "live" ? null : requestedStartsAt.toISOString();
   return {
     schemaVersion: SCHEMA_VERSION,
     sourceSha: /^[a-f0-9]{40}$/u.test(env.CELEBRATEDEAL_SOURCE_SHA ?? "") ? env.CELEBRATEDEAL_SOURCE_SHA : null,
     // Manual never plays anything: the viewer browser is fixed to chromium for the owner steps.
     viewerBrowser: scenario === "manual" ? "chromium" : viewerBrowser, scenario, manualHours, manualMode,
+    ...(manualStartsAt === undefined ? {} : { manualStartsAt }),
     manual: { liveSlug: null, replayUntil: null, startsAt: null },
     result: "BLOCKED", reason: "INVALID_BINDING",
     lineage: "NOT_VERIFIED", aliasBinding: "NOT_VERIFIED",
@@ -660,10 +726,14 @@ export function createReceipt(env = {}) {
     fixture: {
       videoReused: false, videoUploaded: false, videoReadyWaitSeconds: null, readySyncCalls: 0,
       formReused: false, templateReused: false, scriptReused: false, scriptBound: false,
-      liveCreated: false, replayDeadlineMinutes: manualMode === "live"
+      // A requested start is only known relative to the run: the runner fills this in.
+      liveCreated: false, replayDeadlineMinutes: manualMode === "live" && manualStartsAt !== undefined ? null
+        : manualMode === "live"
         ? Math.round((manualLiveSchedule(0, manualHours ?? MANUAL_HOURS_DEFAULT).replayUntil.getTime()) / 60_000)
         : replayDeadlineMinutes(scenario, manualHours ?? MANUAL_HOURS_DEFAULT), formPublic: null,
       formScopeSwitched: false, formScopeRestored: null,
+      // Manual only: the waiting-room poster and loop bound to the Live (owner 2026-11-27).
+      posterUploaded: false, waitingVideoReused: false, waitingVideoUploaded: false, waitingVideoBound: false,
     },
     viewer: {
       admissionOk: false, playbackSourceResponses: 0, tokenFormPlayback: false, uidFormStreamRequests: 0,

@@ -14,7 +14,11 @@ name: Staging Stream signed playback browser
 # live page URL (a public viewer page; no token, cookie or signed URL). manual_mode live (default)
 # schedules the Live ~3 minutes ahead so the page counts down, starts by itself as a live window and
 # later becomes a replay kept for manual_hours after the video ends; replay makes an already finished
-# replay kept for manual_hours after creation. The WebKit job is skipped.
+# replay kept for manual_hours after creation. manual_starts_at (live mode only, Asia/Taipei
+# YYYY-MM-DDTHH:mm, at least 2 minutes ahead) replaces the ~3-minute default start. The demo Live
+# also gets a poster (scripts/fixtures/staging-stream-poster.jpg, uploaded through the studio's image
+# field to the staging R2 bucket) and a 24-second waiting-room loop video
+# (scripts/fixtures/staging-stream-waiting-loop.mp4, uploaded once and reused). The WebKit job is skipped.
 #
 # The WebKit job is Playwright WebKit on macOS: evidence for that engine only. Safari is always
 # reported NOT_COVERED (Playwright WebKit is not Safari, and the app prefers hls.js wherever
@@ -52,6 +56,11 @@ on:
         options:
           - live
           - replay
+      manual_starts_at:
+        description: manual scenario, live mode only - start time in Asia/Taipei as YYYY-MM-DDTHH:mm (at least 2 minutes ahead; the waiting video plays only in the last 60 minutes); empty starts ~3 minutes after the Live is created
+        required: false
+        default: ""
+        type: string
       webkit:
         description: Also run the Playwright WebKit evidence job on macOS (quick scenario; ignored for manual)
         required: true
@@ -81,6 +90,7 @@ jobs:
       CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: ${{ inputs.scenario }}
       CELEBRATEDEAL_STREAM_MANUAL_HOURS: ${{ inputs.manual_hours }}
       CELEBRATEDEAL_STREAM_MANUAL_MODE: ${{ inputs.manual_mode }}
+      CELEBRATEDEAL_STREAM_MANUAL_STARTS_AT: ${{ inputs.manual_starts_at }}
     steps:
       - name: Checkout protected Stream playback runner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

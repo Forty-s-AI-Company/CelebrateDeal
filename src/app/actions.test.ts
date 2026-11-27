@@ -3025,6 +3025,70 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 
+  it("binds a 開播前等候影片 only when it is a ready VOD of the current vendor", async () => {
+    allowCurrentVendorLiveReferences();
+    const lookups: Array<{ where: Record<string, unknown>; select: Record<string, unknown> }> = [];
+    mocks.videoFindFirst.mockImplementation(async (query: { where: { id?: string }; select: Record<string, unknown> }) => {
+      lookups.push(query);
+      return query.where.id === "loop-1" ? { id: "loop-1" } : query.where.id === "video-1" ? { id: "video-1", durationSec: 600 } : null;
+    });
+    const formData = liveFormData();
+    formData.set("waitingVideoId", "loop-1");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/");
+
+    // The lookup binds the submitted id to the session vendor and to pre-recorded sources only.
+    expect(lookups).toContainEqual({
+      where: {
+        vendorId: "vendor-1",
+        id: "loop-1",
+        durationSec: { gt: 0, lte: 300 },
+        OR: [
+          { sourceType: "url", status: "ready" },
+          { sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: true },
+        ],
+      },
+      select: { id: true },
+    });
+    expect(mocks.liveCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ vendorId: "vendor-1", waitingVideoId: "loop-1" }) });
+  });
+
+  it("rejects another vendor's (or a live input) 開播前等候影片 before creating a live", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.videoFindFirst.mockImplementation(async (query: { where: { id?: string } }) => (
+      query.where.id === "video-1" ? { id: "video-1", durationSec: 600 } : null
+    ));
+    const formData = liveFormData();
+    formData.set("waitingVideoId", "foreign-video");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
+    );
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses the Live's own main video as its 開播前等候影片", async () => {
+    allowCurrentVendorLiveReferences();
+    // Even a main video short enough to pass the lookup must not become the unmetered loop.
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", durationSec: 120 });
+    const formData = liveFormData();
+    formData.set("waitingVideoId", "video-1");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow(
+      "redirect:/lives/new?error=invalid_reference&draft=draft-1",
+    );
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("stores no 開播前等候影片 when none is chosen", async () => {
+    allowCurrentVendorLiveReferences();
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow("redirect:/lives/");
+
+    expect(mocks.liveCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ waitingVideoId: null }) });
+    expect(mocks.videoFindFirst).toHaveBeenCalledTimes(1);
+  });
+
   it("does not bind a provisioned but unready Stream upload to a live", async () => {
     allowCurrentVendorLiveReferences();
     mocks.videoFindFirst.mockResolvedValue(null);

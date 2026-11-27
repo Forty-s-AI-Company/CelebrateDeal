@@ -27,6 +27,7 @@ import { evergreenRegistrationRecordNeeded } from "@/lib/evergreen-session-assig
 import { buildShareMetadata, shareDescription, unavailableShareMetadata } from "@/lib/public-share-metadata";
 import { publicInteractionMetadata } from "@/lib/public-interaction-metadata";
 import { isProductPurchasable } from "@/lib/feature-gates";
+import { isWaitingVideoPlayable, WAITING_VIDEO_READINESS_SELECT } from "@/lib/live-waiting-video";
 
 const loadPublicLive = cache(async (slug: string) => {
   const serverNow = new Date();
@@ -49,6 +50,9 @@ const loadPublicLive = cache(async (slug: string) => {
     include: {
       vendor: true,
       video: true,
+      // Only the readiness fields: the waiting video's URL is served by
+      // /api/live-waiting-source, never through the page props.
+      waitingVideo: { select: WAITING_VIDEO_READINESS_SELECT },
       form: true,
       messageTemplate: true,
       interactionScript: {
@@ -209,6 +213,20 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   });
 }
 
+/**
+ * 開播前等候影片: a flag only (never the video's id or URL), and only in the
+ * waiting room this viewer actually sees. The source comes from
+ * /api/live-waiting-source.
+ */
+function waitingVideoProps(
+  live: Parameters<typeof isWaitingVideoPlayable>[1] & { waitingVideo: Parameters<typeof isWaitingVideoPlayable>[0] },
+  runtimeState: LiveRuntimeState,
+  evergreen: EvergreenViewerSession | null,
+): { hasWaitingVideo?: true } {
+  if (runtimeState !== "waiting" || (evergreen && !evergreen.assigned)) return {};
+  return isWaitingVideoPlayable(live.waitingVideo, live) ? { hasWaitingVideo: true } : {};
+}
+
 export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { live, serverNow } = await loadPublicLive(slug);
@@ -250,6 +268,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
     : false;
   const schedule = viewerSchedule({ runtime, evergreen, fixedSession, liveScheduledAt: live.scheduledAt });
   const runtimeState = schedule.runtimeState;
+  const waitingVideoFlag = waitingVideoProps(live, runtimeState, evergreen);
   const sameVendorActiveForm = Boolean(live.form?.vendorId === live.vendorId && live.form.isActive);
   const parsedFormFields = sameVendorActiveForm ? parseRegistrationFormFields(live.form?.fields) : null;
   const formConfigurationUnavailable = Boolean(sameVendorActiveForm && parsedFormFields && !parsedFormFields.success);
@@ -343,6 +362,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         description: live.description,
         accentCopy: live.accentCopy,
         heroImageUrl: live.heroImageUrl,
+        ...waitingVideoFlag,
         vendorId: live.vendorId,
         admissionRequired: true,
         chatEnabled: Boolean(sameVendorActiveForm && parsedFormFields?.success),

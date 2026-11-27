@@ -54,6 +54,10 @@ const liveStudioDraftFields = {
   videoId: optionalReference,
   heroImageUrl: DraftImageReference.default(""),
   heroImageAssetId: optionalReference,
+  // 開播前等候影片. Absent (not defaulted) when none is chosen, so every draft
+  // saved before this field existed stays byte-identical (the publish claim
+  // compares the stored payload exactly).
+  waitingVideoId: boundedReference.optional(),
   interactionScriptId: optionalReference,
   affiliateMode: z.enum(["enabled", "disabled"]).default("enabled"),
   defaultAffiliateCode: z.string().trim().max(80).default(""),

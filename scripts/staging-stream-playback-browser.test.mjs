@@ -9,7 +9,8 @@ import {
   formatReceiptLines, receiptLeaks, redactStreamUrl, renewalDelaySeconds, replayDeadline,
   replayDeadlineMinutes, routeCategory, safariCoverage, setStep, skippedStepsFor, taipeiDateTimeLocal,
   describeErrorSample, formatRenewalErrorsLine, streamSegmentIdentity, summarizeStreamErrors,
-  formatManualLine, parseManualHours, parseManualMode, manualLiveSchedule, videoFixtureFor,
+  formatManualLine, parseManualHours, parseManualMode, parseManualStartsAt, manualLiveSchedule, videoFixtureFor,
+  POSTER_FIXTURE, WAITING_LOOP_FIXTURE, MANUAL_STARTS_AT_MIN_LEAD_MINUTES,
   validUploadUrl, withCorruptedSignature, assessNewTokenUse, createTokenAttribution, playlistReferences, shouldRefuseInRecovery,
 } from "./staging-stream-playback-browser-core.mjs";
 import { describeFailure, probeAllowedOrigins, RECOVERY_CASES, runStreamPlaybackBrowser, safeReceiptText } from "./staging-stream-playback-browser.mjs";
@@ -940,4 +941,130 @@ test("manual: workflow offers the scenario and hours input and never runs the We
   // The Live a manual run creates is never deleted: the runner has no Live delete call at all.
   const runner = await readFile(new URL("./staging-stream-playback-browser.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(runner, /method: "DELETE"[^\r\n]*lives|lives[^\r\n]*method: "DELETE"/iu);
+});
+
+test("manual_starts_at: only a real Asia/Taipei minute parses; empty means not given", () => {
+  assert.equal(parseManualStartsAt(undefined), undefined);
+  assert.equal(parseManualStartsAt(""), undefined);
+  assert.equal(parseManualStartsAt("  "), undefined);
+  assert.equal(parseManualStartsAt("2026-11-28T20:30").toISOString(), "2026-11-28T12:30:00.000Z");
+  assert.equal(parseManualStartsAt(" 2026-12-31T23:59 ").toISOString(), "2026-12-31T15:59:00.000Z");
+  // Taipei midnight is the previous UTC day.
+  assert.equal(parseManualStartsAt("2026-11-28T00:00").toISOString(), "2026-11-27T16:00:00.000Z");
+  for (const bad of ["2026-02-30T10:00", "2026-11-28T24:00", "2026-11-28T12:60", "2026-13-01T10:00", "2026-11-28 20:30",
+    "2026-11-28T20:30:00", "2026-11-28T20:30Z", "2026-11-28T20:30+08:00", "tomorrow", "1764333000000"]) {
+    assert.equal(parseManualStartsAt(bad), null, bad);
+  }
+});
+
+test("manual_starts_at: the schedule uses the requested start as given, at least 2 minutes ahead", () => {
+  const nowMs = Date.UTC(2026, 10, 28, 12, 0, 30);
+  const requested = new Date(Date.UTC(2026, 10, 28, 12, 30));
+  const { startsAt, endsAt, replayUntil } = manualLiveSchedule(nowMs, 6, MANUAL_FIXTURE.videoDurationSeconds, requested);
+  assert.equal(startsAt.toISOString(), requested.toISOString());
+  assert.notEqual(startsAt, requested);
+  assert.equal(endsAt.getTime() - startsAt.getTime(), MANUAL_FIXTURE.videoDurationSeconds * 1_000);
+  assert.equal(replayUntil.getTime() - endsAt.getTime(), 6 * 60 * 60_000);
+  assert.equal(MANUAL_STARTS_AT_MIN_LEAD_MINUTES, 2);
+  // Exactly 2 minutes ahead is enough; anything closer, in the past or not a date is refused.
+  assert.ok(manualLiveSchedule(nowMs, 6, undefined, new Date(nowMs + 2 * 60_000)));
+  assert.equal(manualLiveSchedule(nowMs, 6, undefined, new Date(nowMs + 2 * 60_000 - 1)), null);
+  assert.equal(manualLiveSchedule(nowMs, 6, undefined, new Date(nowMs - 60_000)), null);
+  assert.equal(manualLiveSchedule(nowMs, 6, undefined, new Date(Number.NaN)), null);
+  assert.equal(manualLiveSchedule(nowMs, 6, undefined, null), null);
+  // Not given keeps the ~3-minute default.
+  assert.equal(manualLiveSchedule(nowMs, 6).startsAt.toISOString(), "2026-11-28T12:04:00.000Z");
+});
+
+test("manual_starts_at: the receipt keeps it for live mode only; invalid or replay-mode values stop before any browser", async () => {
+  const given = { ...manualLiveEnv, CELEBRATEDEAL_STREAM_MANUAL_STARTS_AT: "2026-11-28T20:30" };
+  assert.equal(createReceipt(given).manualStartsAt, "2026-11-28T12:30:00.000Z");
+  assert.equal(createReceipt(given).fixture.replayDeadlineMinutes, null);
+  assert.equal("manualStartsAt" in createReceipt(manualLiveEnv), false);
+  assert.equal(createReceipt({ ...manualLiveEnv, CELEBRATEDEAL_STREAM_MANUAL_STARTS_AT: "x" }).manualStartsAt, null);
+  assert.equal(createReceipt({ ...manualEnv, CELEBRATEDEAL_STREAM_MANUAL_STARTS_AT: "2026-11-28T20:30" }).manualStartsAt, null);
+  assert.equal("manualStartsAt" in createReceipt({ ...env, CELEBRATEDEAL_STREAM_MANUAL_STARTS_AT: "2026-11-28T20:30" }), false);
+
+  const forbidden = { chromium: { launch: () => { throw new Error("must not launch"); } } };
+  const nowMs = Date.UTC(2026, 10, 28, 12, 29, 0);
+  const cases = [
+    { ...manualLiveEnv, CELEBRATEDEAL_STREAM_MANUAL_STARTS_AT: "2026-11-28 20:30" },
+    { ...manualEnv, CELEBRATEDEAL_STREAM_MANUAL_STARTS_AT: "2026-11-28T20:30" },
+    // 1 minute ahead: too soon.
+    given,
+  ];
+  for (const caseEnv of cases) {
+    const receipt = await runStreamPlaybackBrowser(caseEnv, {
+      playwright: forbidden, verifyLineage: async () => true, verifyAlias: async () => true, now: () => nowMs,
+    });
+    assert.equal(receipt.result, "BLOCKED");
+    assert.equal(receipt.reason, "INVALID_MANUAL_STARTS_AT");
+    assert.equal(formatManualLine(receipt), "stream_playback_manual=status:BLOCKED reason:INVALID_MANUAL_STARTS_AT");
+  }
+  // Far enough ahead passes the early check and reaches the browser launch.
+  const broken = { chromium: { launch: async () => { throw new Error("no chrome"); } } };
+  const launched = await runStreamPlaybackBrowser(given, {
+    playwright: broken, verifyLineage: async () => true, verifyAlias: async () => true, now: () => Date.UTC(2026, 10, 28, 12, 0, 0),
+  });
+  assert.notEqual(launched.reason, "INVALID_MANUAL_STARTS_AT");
+  assert.equal(launched.sideEffects.liveCreates, 0);
+});
+
+test("manual_starts_at: the workflow offers the optional input and passes it to the chromium job only", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/staging-stream-playback-browser.yml", import.meta.url), "utf8");
+  const lines = workflow.split(/\r?\n/u);
+  const input = lines.findIndex((line) => line.trim() === "manual_starts_at:");
+  assert.ok(input > 0);
+  const block = lines.slice(input + 1, input + 5).map((line) => line.trim());
+  assert.ok(block.includes("required: false") && block.includes("type: string") && block.includes('default: ""'));
+  assert.equal(workflow.split("CELEBRATEDEAL_STREAM_MANUAL_STARTS_AT: ${{ inputs.manual_starts_at }}").length - 1, 1);
+  // Passed through env, never interpolated into a run script.
+  assert.doesNotMatch(workflow, /run:[^\n]*inputs\.manual_starts_at/u);
+});
+
+test("manual: the poster and the waiting loop fixtures are small, pinned and documented; the runner binds both", async () => {
+  const poster = await readFile(new URL(`./${POSTER_FIXTURE.imageFile}`, import.meta.url));
+  assert.equal(poster.length, POSTER_FIXTURE.imageBytes);
+  assert.equal(createHash("sha256").update(poster).digest("hex"), POSTER_FIXTURE.imageSha256);
+  assert.ok(poster.length < 500 * 1024);
+  assert.deepEqual([...poster.subarray(0, 3)], [0xff, 0xd8, 0xff]);
+  const loop = await readFile(new URL(`./${WAITING_LOOP_FIXTURE.videoFile}`, import.meta.url));
+  assert.equal(loop.length, WAITING_LOOP_FIXTURE.videoBytes);
+  assert.equal(createHash("sha256").update(loop).digest("hex"), WAITING_LOOP_FIXTURE.videoSha256);
+  assert.ok(loop.length < 2 * 1024 * 1024);
+  assert.ok(WAITING_LOOP_FIXTURE.videoDurationSeconds >= 20 && WAITING_LOOP_FIXTURE.videoDurationSeconds <= 30);
+  assert.notEqual(WAITING_LOOP_FIXTURE.videoTitle, MANUAL_FIXTURE.videoTitle);
+  assert.notEqual(WAITING_LOOP_FIXTURE.videoTitle, FIXTURE.videoTitle);
+  for (const [doc, hash] of [["staging-stream-poster.md", POSTER_FIXTURE.imageSha256], ["staging-stream-waiting-loop.md", WAITING_LOOP_FIXTURE.videoSha256]]) {
+    const text = await readFile(new URL(`./fixtures/${doc}`, import.meta.url), "utf8");
+    assert.ok(text.includes(hash), doc);
+  }
+  const runner = await readFile(new URL("./staging-stream-playback-browser.mjs", import.meta.url), "utf8");
+  assert.ok(runner.includes("ensureFixtureVideo(WAITING_LOOP_FIXTURE)"));
+  assert.ok(runner.includes(`select[name="waitingVideoId"]`));
+  assert.ok(runner.includes("POSTER_FIXTURE.imageSha256"));
+  const receipt = createReceipt(manualLiveEnv);
+  assert.deepEqual(
+    [receipt.fixture.posterUploaded, receipt.fixture.waitingVideoReused, receipt.fixture.waitingVideoUploaded, receipt.fixture.waitingVideoBound],
+    [false, false, false, false],
+  );
+});
+
+test("request policy: the owner may PUT the poster only to the staging R2 bucket; the viewer never", () => {
+  const r2 = `https://celebrate-deal-staging.${"a".repeat(32)}.r2.cloudflarestorage.com/images/01234567-89ab-cdef-0123-456789abcdef.jpg`;
+  const signed = `${r2}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=${"b".repeat(64)}`;
+  const req = (url, method) => ({ url, method, postData: null });
+  assert.equal(classifyRequest(req(signed, "PUT"), "owner"), "WRITE");
+  assert.equal(classifyRequest(req(signed, "OPTIONS"), "owner"), "READ");
+  assert.equal(classifyRequest(req(r2, "PUT"), "owner"), "BLOCK");
+  assert.equal(classifyRequest(req(signed, "POST"), "owner"), "BLOCK");
+  assert.equal(classifyRequest(req(signed, "DELETE"), "owner"), "BLOCK");
+  assert.equal(classifyRequest(req(signed, "PUT"), "viewer"), "EXTERNAL");
+  assert.equal(classifyRequest(req(signed.replace("celebrate-deal-staging", "celebrate-deal-production"), "PUT"), "owner"), "EXTERNAL");
+  assert.equal(classifyRequest(req(signed.replace(".jpg", ".png"), "PUT"), "owner"), "EXTERNAL");
+  assert.equal(classifyRequest(req(signed.replace("/images/", "/other/"), "PUT"), "owner"), "EXTERNAL");
+  for (const path of ["/api/media/images/presign", "/api/media/images/complete"]) {
+    assert.equal(classifyRequest(req(`${ORIGIN}${path}`, "POST"), "owner"), "WRITE", path);
+    assert.equal(classifyRequest(req(`${ORIGIN}${path}`, "POST"), "viewer"), "BLOCK", path);
+  }
 });

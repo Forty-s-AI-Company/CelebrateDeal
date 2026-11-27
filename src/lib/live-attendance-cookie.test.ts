@@ -164,13 +164,15 @@ describe("attendance-only cookie (Q-17)", () => {
     const readers = scanSources((source) => /liveSessionHint(?:SubmissionId|TokenFromCookieHeader)\b/u.test(source) || source.includes("celebratedeal_lsh_"))
       .filter((file) => !/\.test\.tsx?$/u.test(file));
     expect(readers).toEqual(["lib/live-attendance-cookie.ts", "lib/live-fixed-sessions-store.ts"]);
-    // And the store's own wrappers reach only the three viewer paths that pick a fixed session.
+    // And the store's own wrappers reach only the four viewer paths that pick a fixed session
+    // (the waiting-room video follows the same session to know whether the room is still waiting).
     const callers = scanSources((source) => /sessionHintTokenFrom(?:Request|CookieHeader)\b/u.test(source))
       .filter((file) => !/\.test\.tsx?$/u.test(file));
     expect(callers).toEqual([
       "app/(viewer)/live/[slug]/page.tsx",
       "app/api/live-admission/route.ts",
       "app/api/live-playback-source/route.ts",
+      "app/api/live-waiting-source/route.ts",
       "lib/live-fixed-sessions-store.ts",
     ]);
   });

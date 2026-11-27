@@ -65,7 +65,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   const draftLookupAt = new Date();
   const videos = await db.video.findMany({
     where: liveReadyVideoWhere(vendor.id),
-    select: { id: true, title: true },
+    select: { id: true, title: true, sourceType: true, durationSec: true },
     orderBy: { createdAt: "desc" },
   });
   const products = await db.product.findMany({

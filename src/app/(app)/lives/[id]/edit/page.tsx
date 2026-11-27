@@ -11,6 +11,7 @@ import { LiveStudioDraftPayloadSchema, parseStoredLiveStudioDraft, type LiveStud
 import { LIVE_STUDIO_FIRST_STEP_INDEX, liveStudioStepSummary } from "@/lib/live-studio-steps";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
+import { isWaitingVideoOption } from "@/lib/live-waiting-video";
 import { formatZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import { fixedSessionDraftRows } from "@/lib/live-fixed-sessions";
 import {
@@ -144,9 +145,27 @@ function prepareLiveEditorResources(input: {
   };
 }
 
+/**
+ * 開播前等候影片: kept only while it is still a ready VOD of this vendor;
+ * otherwise saving unbinds it. The draft carries the key only when one is set.
+ */
+function prepareWaitingVideoForEditor(
+  live: { waitingVideoId: string | null; videoId: string | null },
+  videos: Array<{ id: string; sourceType: string; durationSec: number }>,
+): { unavailable: boolean; payloadFields: { waitingVideoId?: string } } {
+  const waitingVideoId = live.waitingVideoId;
+  if (!waitingVideoId) return { unavailable: false, payloadFields: {} };
+  const available = waitingVideoId !== live.videoId
+    && videos.some((video) => video.id === waitingVideoId && isWaitingVideoOption(video));
+  return available
+    ? { unavailable: false, payloadFields: { waitingVideoId } }
+    : { unavailable: true, payloadFields: {} };
+}
+
 function LiveResourceWarnings({
   hasUnavailableScript,
   hasUnavailableVideo,
+  hasUnavailableWaitingVideo = false,
   hasUnavailableProduct,
   hasUnavailableForm,
   hasUnavailableTemplate,
@@ -155,6 +174,7 @@ function LiveResourceWarnings({
 }: {
   hasUnavailableScript: boolean;
   hasUnavailableVideo: boolean;
+  hasUnavailableWaitingVideo?: boolean;
   hasUnavailableProduct: boolean;
   hasUnavailableForm: boolean;
   hasUnavailableTemplate: boolean;
@@ -165,6 +185,7 @@ function LiveResourceWarnings({
     <>
       {hasUnavailableScript ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的互動腳本不是已發布版本，公開頁已停止載入；本次儲存會解除綁定，請改選已發布腳本。</p> : null}
       {hasUnavailableVideo ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的影片或即時直播 已無法播放；本次儲存會解除綁定，公開前請重新選擇可用媒體。</p> : null}
+      {hasUnavailableWaitingVideo ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前設定的開播前等候影片已無法播放；本次儲存會移除，開播前只顯示封面。</p> : null}
       {hasUnavailableProduct ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前有商品已停用或尚未確認履約類型；本次儲存會解除這些商品，請確認直播銷售清單。</p> : null}
       {hasUnavailableForm ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的報名表已停用或缺少必要姓名／Email 欄位；本次儲存會解除綁定。</p> : null}
       {hasUnavailableTemplate ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的通知模板不是啟用中的「報名成功 Email」，因此不會寄送；本次儲存會解除綁定，請改選可用模板。</p> : null}
@@ -219,7 +240,7 @@ export default async function EditLivePage({
     }),
     db.video.findMany({
       where: liveReadyVideoWhere(vendor.id),
-      select: { id: true, title: true },
+      select: { id: true, title: true, sourceType: true, durationSec: true },
       orderBy: { createdAt: "desc" },
     }),
     db.product.findMany({
@@ -305,6 +326,8 @@ export default async function EditLivePage({
     return !template || template.trigger !== expectedTrigger;
   });
   const fixedSessionStudio = prepareFixedSessionStudio(live, vendor.timezone);
+  const waitingVideo = prepareWaitingVideoForEditor(live, videos);
+  const hasUnavailableWaitingVideo = waitingVideo.unavailable;
   const basePayload = LiveStudioDraftPayloadSchema.parse({
     title: live.title,
     slug: live.slug,
@@ -328,6 +351,7 @@ export default async function EditLivePage({
     videoId: preparedResources.videoId,
     heroImageUrl: live.heroImageUrl ?? "",
     heroImageAssetId: live.heroImageAssetId ?? "",
+    ...waitingVideo.payloadFields,
     interactionScriptId: hasUnavailableScript ? "" : (live.interactionScriptId ?? ""),
     affiliateMode: quotaPolicy.affiliateMode,
     defaultAffiliateCode: quotaPolicy.defaultAffiliateCode ?? "",
@@ -417,6 +441,7 @@ export default async function EditLivePage({
       <LiveResourceWarnings
         hasUnavailableScript={hasUnavailableScript}
         hasUnavailableVideo={preparedResources.hasUnavailableVideo}
+        hasUnavailableWaitingVideo={hasUnavailableWaitingVideo}
         hasUnavailableProduct={preparedResources.hasUnavailableProduct}
         hasUnavailableForm={preparedResources.hasUnavailableForm}
         hasUnavailableTemplate={hasUnavailableTemplate}

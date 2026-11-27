@@ -5,7 +5,7 @@ import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
 import { elementHydratedInPage, HYDRATION_TIMEOUT_MS } from "./staging-browser-hydration.mjs";
 import { validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 import {
-  ORIGIN, FIXTURE, STEPS, videoFixtureFor, manualLiveSchedule,
+  ORIGIN, FIXTURE, STEPS, videoFixtureFor, manualLiveSchedule, POSTER_FIXTURE, WAITING_LOOP_FIXTURE,
   assessNewTokenUse, assessPlaybackProgress, assessRecovery, assessReplayTokenExp, classifyError, classifyPlayerPath, createTokenAttribution,
   classifyRequest, classifyStoredThumbnail, classifyStreamUrl, createReceipt, decodeStreamTokenClaims,
   finalVerdict, formatReceiptLines, isStreamDeliveryHost, receiptLeaks, renewalDelaySeconds,
@@ -276,6 +276,13 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
   const { viewerBrowser, scenario } = receipt;
   if (scenario === "manual" && receipt.manualHours === null) { receipt.reason = "INVALID_MANUAL_HOURS"; return receipt; }
   if (scenario === "manual" && receipt.manualMode === null) { receipt.reason = "INVALID_MANUAL_MODE"; return receipt; }
+  // manual_starts_at: a real Asia/Taipei minute, only with manual_mode live, at least 2 minutes ahead.
+  const requestedStartsAt = typeof receipt.manualStartsAt === "string" ? new Date(receipt.manualStartsAt) : undefined;
+  if (scenario === "manual" && (receipt.manualStartsAt === null
+    || (requestedStartsAt && !manualLiveSchedule((dependencies.now ?? Date.now)(), receipt.manualHours ?? undefined, videoFixtureFor(scenario).videoDurationSeconds, requestedStartsAt)))) {
+    receipt.reason = "INVALID_MANUAL_STARTS_AT";
+    return receipt;
+  }
   const VIDEO = videoFixtureFor(scenario);
   const skipped = skippedStepsFor(viewerBrowser, scenario);
   for (const step of skipped) setStep(receipt, step, "SKIPPED");
@@ -417,7 +424,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
   };
 
   const run8 = randomUUID().replaceAll("-", "").slice(0, 8);
-  const fixture = { videoId: null, liveId: null, liveSlug: null, scriptId: null, deadline: null, startsAt: null };
+  const fixture = { videoId: null, waitingVideoId: null, liveId: null, liveSlug: null, scriptId: null, deadline: null, startsAt: null };
 
   try {
     currentStep = "OWNER_SESSION";
@@ -445,29 +452,31 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
         durationSec: Number.isFinite(body?.video?.durationSec) ? body.video.durationSec : 0,
       };
     };
-    const listFixtureVideoIds = async () => {
-      await owner.goto(`${ORIGIN}/videos?q=${encodeURIComponent(VIDEO.videoTitle)}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    const listFixtureVideoIds = async (spec) => {
+      await owner.goto(`${ORIGIN}/videos?q=${encodeURIComponent(spec.videoTitle)}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
       return owner.locator("article").evaluateAll((articles, title) => articles
         .filter((article) => article.querySelector("h2")?.textContent?.trim() === title)
         .map((article) => {
           const href = article.querySelector('a[href^="/videos/"][href$="/edit"]')?.getAttribute("href") ?? "";
           return decodeURIComponent(href.split("/")[2] ?? "");
         })
-        .filter((id) => /^[A-Za-z0-9_-]{1,128}$/u.test(id)), VIDEO.videoTitle);
+        .filter((id) => /^[A-Za-z0-9_-]{1,128}$/u.test(id)), spec.videoTitle);
     };
+    // A long fixture may lose up to a minute to Stream's duration rounding; a short loop must be whole.
+    const minimumDuration = (spec) => spec.videoDurationSeconds - (spec.videoDurationSeconds > 120 ? 60 : 2);
 
-    await step("FIXTURE_VIDEO", async () => {
+    /** Reuses the ready fixture video of this title or uploads it once; returns its id and how. */
+    const ensureFixtureVideo = async (spec) => {
       await ensureOwnerSession();
       // Reuse the ready fixture video. A still-processing duplicate from an interrupted earlier run
       // may never finish (an unfinished direct upload stays 404 at Cloudflare), so it is not awaited.
-      for (const id of await listFixtureVideoIds()) {
+      for (const id of await listFixtureVideoIds(spec)) {
         const state = await videoStatus(id);
-        if (state?.ready && state.durationSec >= VIDEO.videoDurationSeconds - 60) { fixture.videoId = id; break; }
+        if (state?.ready && state.durationSec >= minimumDuration(spec)) return { id, reused: true, uploaded: false, readyWaitSeconds: null };
       }
-      if (fixture.videoId) { receipt.fixture.videoReused = true; return; }
-      const bytes = await readFile(new URL(`./${VIDEO.videoFile}`, import.meta.url));
-      ensure(bytes.length === VIDEO.videoBytes
-        && createHash("sha256").update(bytes).digest("hex") === VIDEO.videoSha256, "FIXTURE_REJECTED");
+      const bytes = await readFile(new URL(`./${spec.videoFile}`, import.meta.url));
+      ensure(bytes.length === spec.videoBytes
+        && createHash("sha256").update(bytes).digest("hex") === spec.videoSha256, "FIXTURE_REJECTED");
       await owner.goto(`${ORIGIN}/videos/new`, { waitUntil: "domcontentloaded", timeout: 30_000 });
       const csrf = await owner.locator('input[name="_csrf"]').first().inputValue({ timeout: 15_000 });
       ensure(csrf.length > 0, "CSRF_MISSING");
@@ -475,29 +484,28 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
         method: "POST",
         headers: { ...CLIENT_HEADERS, "content-type": "application/json", "x-csrf-token": csrf },
         body: JSON.stringify({
-          title: VIDEO.videoTitle, fileName: VIDEO.uploadFileName, mimeType: "video/mp4",
+          title: spec.videoTitle, fileName: spec.uploadFileName, mimeType: "video/mp4",
           sizeBytes: bytes.length, maxDurationSeconds: 3600,
         }),
       });
       ensure(created.status === 200 && /^[A-Za-z0-9_-]{1,128}$/u.test(created.body?.videoId ?? "")
         && created.body?.method === "POST" && validUploadUrl(created.body?.uploadUrl), "UPLOAD_SETUP_REJECTED");
-      fixture.videoId = created.body.videoId;
+      const videoId = created.body.videoId;
       const form = new FormData();
-      form.set("file", new Blob([bytes], { type: "video/mp4" }), VIDEO.uploadFileName);
+      form.set("file", new Blob([bytes], { type: "video/mp4" }), spec.uploadFileName);
       receipt.sideEffects.videoUploads += 1;
       // Only the provider's one-time upload URL receives the file; no app credential is sent.
       const uploaded = await fetchImpl(created.body.uploadUrl, { method: "POST", body: form, redirect: "manual", signal: AbortSignal.timeout(120_000) });
       await uploaded.body?.cancel();
       ensure(uploaded.ok, "UPLOAD_REJECTED");
-      receipt.fixture.videoUploaded = true;
       const uploadedAt = now();
       // A4-04: staging may never get the ready webhook; the JOB_SECRET catch-up applies the
       // provider's own state (5 min after upload at the earliest).
       const readyDeadline = now() + VIDEO_READY_TIMEOUT_MS;
       let lastSync = 0;
       while (now() < readyDeadline) {
-        const state = await videoStatus(fixture.videoId);
-        if (state?.ready && state.durationSec >= VIDEO.videoDurationSeconds - 60) break;
+        const state = await videoStatus(videoId);
+        if (state?.ready && state.durationSec >= minimumDuration(spec)) break;
         ensure(!state || state.status !== "error", "VIDEO_PROVIDER_ERROR");
         if (now() - uploadedAt > 5 * 60_000 && now() - lastSync > 60_000) {
           lastSync = now();
@@ -512,9 +520,23 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
         }
         await wait(15_000);
       }
-      const final = await videoStatus(fixture.videoId);
-      ensure(final?.ready && final.durationSec >= VIDEO.videoDurationSeconds - 60, "VIDEO_NOT_READY");
-      receipt.fixture.videoReadyWaitSeconds = Math.round((now() - uploadedAt) / 1_000);
+      const final = await videoStatus(videoId);
+      ensure(final?.ready && final.durationSec >= minimumDuration(spec), "VIDEO_NOT_READY");
+      return { id: videoId, reused: false, uploaded: true, readyWaitSeconds: Math.round((now() - uploadedAt) / 1_000) };
+    };
+
+    await step("FIXTURE_VIDEO", async () => {
+      const main = await ensureFixtureVideo(VIDEO);
+      fixture.videoId = main.id;
+      receipt.fixture.videoReused = main.reused;
+      receipt.fixture.videoUploaded = main.uploaded;
+      receipt.fixture.videoReadyWaitSeconds = main.readyWaitSeconds;
+      if (scenario !== "manual") return;
+      // Manual: the 開播前等候影片 the demo Live loops in its waiting room (owner 2026-11-27).
+      const loop = await ensureFixtureVideo(WAITING_LOOP_FIXTURE);
+      fixture.waitingVideoId = loop.id;
+      receipt.fixture.waitingVideoReused = loop.reused;
+      receipt.fixture.waitingVideoUploaded = loop.uploaded;
     });
 
     /** Anonymous GET of the public registration page (no cookies): 200 means it is public. */
@@ -654,8 +676,11 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
       // Replay (and full/quick): natural VOD completion two days ago, so the Live is in replay as soon as it
       // exists. Manual live: scheduled shortly ahead, so the public page counts down, starts the pre-recorded
       // video by itself as a live window and only afterwards becomes a replay.
+      // manual_starts_at is checked again here: uploads may have taken minutes since the run began.
       const manualLive = scenario === "manual" && receipt.manualMode === "live"
-        ? manualLiveSchedule(now(), receipt.manualHours ?? undefined, VIDEO.videoDurationSeconds) : null;
+        ? manualLiveSchedule(now(), receipt.manualHours ?? undefined, VIDEO.videoDurationSeconds, requestedStartsAt) : null;
+      ensure(!(scenario === "manual" && receipt.manualMode === "live") || manualLive, "MANUAL_STARTS_AT_TOO_SOON");
+      if (manualLive && requestedStartsAt) receipt.fixture.replayDeadlineMinutes = Math.round((manualLive.replayUntil.getTime() - now()) / 60_000);
       await owner.locator('input[name="scheduledAt"][type="datetime-local"]').fill(taipeiDateTimeLocal(manualLive?.startsAt ?? new Date(now() - 2 * 24 * 60 * 60_000)));
       const replay = owner.locator('input[name="replayEnabled"]');
       if (!await replay.isChecked()) await replay.check();
@@ -663,6 +688,23 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
       fixture.deadline = manualLive?.replayUntil ?? replayDeadline(now(), replayDeadlineMinutes(scenario, receipt.manualHours ?? undefined));
       fixture.startsAt = manualLive?.startsAt ?? null;
       await owner.locator('input[name="replayAvailableUntil"][type="datetime-local"]').fill(taipeiDateTimeLocal(fixture.deadline));
+      if (scenario === "manual") {
+        // The waiting room's poster through the studio's own image field (presign, one signed PUT to the
+        // staging R2 bucket, complete), then the 開播前等候影片 from the merchant's own library.
+        const posterBytes = await readFile(new URL(`./${POSTER_FIXTURE.imageFile}`, import.meta.url));
+        ensure(posterBytes.length === POSTER_FIXTURE.imageBytes
+          && createHash("sha256").update(posterBytes).digest("hex") === POSTER_FIXTURE.imageSha256, "POSTER_FIXTURE_REJECTED");
+        const advanced = owner.locator('details[data-advanced-settings="content"]');
+        await advanced.locator('input[type="file"][accept*="image/jpeg"]').setInputFiles({
+          name: POSTER_FIXTURE.uploadFileName, mimeType: "image/jpeg", buffer: posterBytes,
+        });
+        await advanced.getByRole("button", { name: "開始上傳", exact: true }).click({ timeout: 10_000 });
+        ensure(await visible(advanced.getByText("縮圖上傳完成，儲存表單後即會套用。", { exact: true }), 45_000), "POSTER_UPLOAD");
+        ensure(/^[A-Za-z0-9_-]{1,128}$/u.test(await owner.locator('input[name="heroImageAssetId"]').inputValue()), "POSTER_ASSET");
+        receipt.fixture.posterUploaded = true;
+        ensure(await selectOptionByText(owner.locator('select[name="waitingVideoId"]'), WAITING_LOOP_FIXTURE.videoTitle), "LIVE_WAITING_VIDEO_OPTION");
+        receipt.fixture.waitingVideoBound = true;
+      }
       fixture.liveSlug = await owner.locator("input#live-slug").inputValue();
       ensure(/^[a-z0-9-]{1,120}$/u.test(fixture.liveSlug), "LIVE_SLUG");
       await next();

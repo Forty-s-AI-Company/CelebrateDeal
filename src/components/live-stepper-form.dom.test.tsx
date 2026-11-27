@@ -977,3 +977,60 @@ describe("LiveStepperForm 就地建立 drawers", () => {
     }
   });
 });
+
+describe("LiveStepperForm 開播前等候影片", () => {
+  const mixedVideos = [
+    { id: "video-cf-3341", title: "原型食物講座（33:41）", sourceType: "cloudflare_stream", durationSec: 2_021 },
+    { id: "video-url-loop", title: "等候循環", sourceType: "url", durationSec: 24 },
+    { id: "video-cf-teaser", title: "五分鐘預告", sourceType: "cloudflare_stream", durationSec: 300 },
+    { id: "video-unknown", title: "長度未知", sourceType: "url", durationSec: 0 },
+    { id: "video-live-input", title: "OBS 推流", sourceType: "cloudflare_live", durationSec: 0 },
+    { id: "video-browser", title: "瀏覽器直播", sourceType: "browser_live", durationSec: 0 },
+  ];
+
+  it("offers only pre-recorded videos up to 5 minutes, never the main video, and is optional", async () => {
+    await act(async () => { root.render(<LiveStepperForm {...resources} videos={mixedVideos} />); });
+    const select = control<HTMLSelectElement>('select[name="waitingVideoId"]');
+    expect(Array.from(select.options).map((option) => [option.value, option.textContent])).toEqual([
+      ["", "不使用（開播前只顯示封面）"],
+      ["video-url-loop", "等候循環"],
+      ["video-cf-teaser", "五分鐘預告"],
+    ]);
+    expect(select.value).toBe("");
+    expect(select.required).toBe(false);
+    expect(select.closest("label")?.textContent).toContain("需 5 分鐘以內");
+    // The main video select still offers every playable source.
+    expect(control<HTMLSelectElement>('select[name="videoId"]').options).toHaveLength(7);
+
+    // Choosing the loop as the main video takes it out of the waiting options.
+    const main = control<HTMLSelectElement>('select[name="videoId"]');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(main, "video-url-loop");
+      main.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(Array.from(control<HTMLSelectElement>('select[name="waitingVideoId"]').options).map((option) => option.value))
+      .toEqual(["", "video-cf-teaser"]);
+  });
+
+  it("serializes the choice only when one is made, so older drafts keep their exact payload", async () => {
+    await act(async () => { root.render(<LiveStepperForm {...resources} videos={mixedVideos} initialDraft={resumedDraft} />); });
+    const form = control<HTMLFormElement>("form");
+    expect(serializeLiveStudioDraft(form, LIVE_STUDIO_LAST_STEP_INDEX)).not.toHaveProperty("waitingVideoId");
+
+    const select = control<HTMLSelectElement>('select[name="waitingVideoId"]');
+    await act(async () => {
+      select.value = "video-url-loop";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(serializeLiveStudioDraft(form, LIVE_STUDIO_LAST_STEP_INDEX)).toMatchObject({ waitingVideoId: "video-url-loop" });
+  });
+
+  it("restores a saved choice", async () => {
+    const payload = LiveStudioDraftPayloadSchema.parse({ ...reportedPayload, waitingVideoId: "video-url-loop" });
+    await act(async () => {
+      root.render(<LiveStepperForm {...resources} videos={mixedVideos} initialDraft={{ ...resumedDraft, payload }} />);
+    });
+    expect(control<HTMLSelectElement>('select[name="waitingVideoId"]').value).toBe("video-url-loop");
+    expect(serializeLiveStudioDraft(control<HTMLFormElement>("form"), LIVE_STUDIO_LAST_STEP_INDEX)).toEqual(payload);
+  });
+});
