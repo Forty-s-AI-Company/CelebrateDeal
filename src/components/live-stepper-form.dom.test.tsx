@@ -1010,6 +1010,54 @@ describe("LiveStepperForm 開播前等候影片", () => {
     });
     expect(Array.from(control<HTMLSelectElement>('select[name="waitingVideoId"]').options).map((option) => option.value))
       .toEqual(["", "video-cf-teaser"]);
+    // Nothing was chosen as the waiting video, so nothing was cleared.
+    expect(document.querySelector('[data-testid="waiting-video-cleared"]')).toBeNull();
+  });
+
+  it("never offers a merchant-entered URL that points at Cloudflare Stream (review m-A)", async () => {
+    const videos = [
+      ...mixedVideos,
+      { id: "video-url-stream", title: "貼上的 Stream 網址", sourceType: "url", durationSec: 60, selfReportedStreamUrl: true },
+      { id: "video-cf-stream", title: "上傳的短片", sourceType: "cloudflare_stream", durationSec: 60, selfReportedStreamUrl: false },
+    ];
+    await act(async () => { root.render(<LiveStepperForm {...resources} videos={videos} />); });
+    expect(Array.from(control<HTMLSelectElement>('select[name="waitingVideoId"]').options).map((option) => option.value))
+      .toEqual(["", "video-url-loop", "video-cf-teaser", "video-cf-stream"]);
+    // It can still be the main video, which is metered through admission.
+    expect(Array.from(control<HTMLSelectElement>('select[name="videoId"]').options).map((option) => option.value)).toContain("video-url-stream");
+  });
+
+  it("says so when choosing the waiting video as the main video clears it (NIT 2)", async () => {
+    await act(async () => { root.render(<LiveStepperForm {...resources} videos={mixedVideos} initialDraft={resumedDraft} />); });
+    const form = control<HTMLFormElement>("form");
+    const waiting = control<HTMLSelectElement>('select[name="waitingVideoId"]');
+    await act(async () => {
+      waiting.value = "video-url-loop";
+      waiting.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(waiting.value).toBe("video-url-loop");
+    expect(document.querySelector('[data-testid="waiting-video-cleared"]')).toBeNull();
+
+    const main = control<HTMLSelectElement>('select[name="videoId"]');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(main, "video-url-loop");
+      main.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const after = control<HTMLSelectElement>('select[name="waitingVideoId"]');
+    expect(after.value).toBe("");
+    const notice = document.querySelector('[data-testid="waiting-video-cleared"]');
+    expect(notice?.textContent).toBe("等候影片不能和主影片相同，已改為不使用");
+    expect(notice?.getAttribute("role")).toBe("status");
+    expect(after.getAttribute("aria-describedby")).toBe(notice?.id);
+    expect(serializeLiveStudioDraft(form, LIVE_STUDIO_LAST_STEP_INDEX)).not.toHaveProperty("waitingVideoId");
+
+    // Choosing another waiting video dismisses the notice.
+    await act(async () => {
+      after.value = "video-cf-teaser";
+      after.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(document.querySelector('[data-testid="waiting-video-cleared"]')).toBeNull();
+    expect(serializeLiveStudioDraft(form, LIVE_STUDIO_LAST_STEP_INDEX)).toMatchObject({ waitingVideoId: "video-cf-teaser" });
   });
 
   it("serializes the choice only when one is made, so older drafts keep their exact payload", async () => {

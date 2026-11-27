@@ -3030,7 +3030,9 @@ describe("upsertLiveAction", () => {
     const lookups: Array<{ where: Record<string, unknown>; select: Record<string, unknown> }> = [];
     mocks.videoFindFirst.mockImplementation(async (query: { where: { id?: string }; select: Record<string, unknown> }) => {
       lookups.push(query);
-      return query.where.id === "loop-1" ? { id: "loop-1" } : query.where.id === "video-1" ? { id: "video-1", durationSec: 600 } : null;
+      return query.where.id === "loop-1"
+        ? { id: "loop-1", sourceType: "url", videoUrl: "https://video.example.test/loop.mp4" }
+        : query.where.id === "video-1" ? { id: "video-1", durationSec: 600 } : null;
     });
     const formData = liveFormData();
     formData.set("waitingVideoId", "loop-1");
@@ -3048,9 +3050,46 @@ describe("upsertLiveAction", () => {
           { sourceType: "cloudflare_stream", status: "ready", cloudflareReadyToStream: true },
         ],
       },
-      select: { id: true },
+      select: { id: true, sourceType: true, videoUrl: true },
     });
     expect(mocks.liveCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ vendorId: "vendor-1", waitingVideoId: "loop-1" }) });
+  });
+
+  it("refuses a merchant-entered URL pointing at Cloudflare Stream as the 開播前等候影片 (review m-A)", async () => {
+    const uid = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+    for (const videoUrl of [
+      `https://videodelivery.net/${uid}/manifest/video.m3u8`,
+      `https://customer-abc123.cloudflarestream.com/${uid}/manifest/video.m3u8?clientBandwidthHint=10`,
+    ]) {
+      mocks.liveCreate.mockClear();
+      allowCurrentVendorLiveReferences();
+      // The self-reported length (60 s) passes the lookup; the address still points at a Stream video of any length.
+      mocks.videoFindFirst.mockImplementation(async (query: { where: { id?: string } }) => (
+        query.where.id === "loop-stream" ? { id: "loop-stream", sourceType: "url", videoUrl }
+          : query.where.id === "video-1" ? { id: "video-1", durationSec: 600 } : null
+      ));
+      const formData = liveFormData();
+      formData.set("waitingVideoId", "loop-stream");
+
+      await expect(upsertLiveAction(formData)).rejects.toThrow(
+        "redirect:/lives/new?error=invalid_reference&draft=draft-1",
+      );
+      expect(mocks.liveCreate).not.toHaveBeenCalled();
+    }
+  });
+
+  it("still binds an uploaded Cloudflare Stream video as the 開播前等候影片", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.videoFindFirst.mockImplementation(async (query: { where: { id?: string } }) => (
+      query.where.id === "loop-cf"
+        ? { id: "loop-cf", sourceType: "cloudflare_stream", videoUrl: "https://videodelivery.net/a1b2c3d4e5f60718293a4b5c6d7e8f90/manifest/video.m3u8" }
+        : query.where.id === "video-1" ? { id: "video-1", durationSec: 600 } : null
+    ));
+    const formData = liveFormData();
+    formData.set("waitingVideoId", "loop-cf");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/");
+    expect(mocks.liveCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ waitingVideoId: "loop-cf" }) });
   });
 
   it("rejects another vendor's (or a live input) 開播前等候影片 before creating a live", async () => {
@@ -3070,7 +3109,7 @@ describe("upsertLiveAction", () => {
   it("refuses the Live's own main video as its 開播前等候影片", async () => {
     allowCurrentVendorLiveReferences();
     // Even a main video short enough to pass the lookup must not become the unmetered loop.
-    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", durationSec: 120 });
+    mocks.videoFindFirst.mockResolvedValue({ id: "video-1", durationSec: 120, sourceType: "url", videoUrl: "https://video.example.test/main.mp4" });
     const formData = liveFormData();
     formData.set("waitingVideoId", "video-1");
 

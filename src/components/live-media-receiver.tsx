@@ -9,7 +9,7 @@ export function LiveMediaReceiver({ videoRef, liveId, vendorId }: { videoRef: Re
     const video = videoRef.current;
     if (!video) return;
     let active = true;
-    const failed = () => { if (active) setError("影音來源已中斷或尚未開播，請重試連線。"); };
+    const failed = () => { if (active) setError("直播畫面中斷或還沒開始，請重新連線。"); };
     let connection: ReturnType<typeof connectLiveMedia> | undefined;
     try {
       connection = connectLiveMedia({ liveId, vendorId, direction: "read" }, { video, onFailure: failed });

@@ -249,13 +249,15 @@ describe("EditLivePage unified Live Studio", () => {
       { id: "loop-1", title: "等候循環", sourceType: "url", durationSec: 24 },
       { id: "obs-input", title: "OBS", sourceType: "cloudflare_live", durationSec: 0 },
       { id: "long-1", title: "完整講座", sourceType: "url", durationSec: 3_600 },
+      // A self-reported 60 s whose URL is a Cloudflare Stream manifest of any length (review m-A).
+      { id: "stream-url", title: "Stream 網址", sourceType: "url", durationSec: 60, videoUrl: "https://videodelivery.net/a1b2c3d4e5f60718293a4b5c6d7e8f90/manifest/video.m3u8" },
     ]);
     mocks.liveFindFirst.mockResolvedValue({ ...live, interactionScriptId: null, waitingVideoId: "loop-1" });
     let html = renderToStaticMarkup(await EditLivePage({ params: Promise.resolve({ id: "live-1" }), searchParams: Promise.resolve({}) }));
     expect(html).not.toContain("開播前等候影片已無法播放");
     expect(lastInitialValues()).toMatchObject({ waitingVideoId: "loop-1" });
 
-    for (const [waitingVideoId, videoId] of [["obs-input", null], ["archived-or-foreign", null], ["long-1", null], ["loop-1", "loop-1"]]) {
+    for (const [waitingVideoId, videoId] of [["obs-input", null], ["archived-or-foreign", null], ["long-1", null], ["stream-url", null], ["loop-1", "loop-1"]]) {
       mocks.liveFindFirst.mockResolvedValue({ ...live, interactionScriptId: null, waitingVideoId, videoId });
       html = renderToStaticMarkup(await EditLivePage({ params: Promise.resolve({ id: "live-1" }), searchParams: Promise.resolve({}) }));
       expect(html).toContain("開播前等候影片已無法播放");

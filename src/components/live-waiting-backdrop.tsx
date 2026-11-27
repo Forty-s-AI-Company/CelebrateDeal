@@ -48,6 +48,11 @@ export async function fetchLiveWaitingSource(vendorId: string, liveId: string) {
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 /** Asked this long after the window opens on the server clock, so the server already agrees. */
 const WINDOW_OPEN_MARGIN_MS = 1_000;
+/**
+ * When the first request answers no source or fails, it is asked again after
+ * 5 seconds and then after 30 more: at most 3 requests, then the poster stays.
+ */
+export const WAITING_VIDEO_RETRY_DELAYS_MS = [5_000, 30_000] as const;
 
 /**
  * Milliseconds (from now, on this device) until the waiting video may be asked
@@ -79,7 +84,8 @@ function playMuted(video: HTMLVideoElement) {
  * (the poster stays as its poster). There is no pause, seek bar or controls,
  * only a sound toggle. The video is served only within 60 minutes of the
  * viewer's own start: an earlier visitor sees the poster, and the source is
- * asked for by itself when that window opens. When the room closes (the show starts) this unmounts:
+ * asked for by itself when that window opens; a first request that gets no
+ * source is retried after 5 and 30 seconds. When the room closes (the show starts) this unmounts:
  * hls.js is destroyed, the renewal stops and the element's source is dropped
  * before the main player takes over.
  */
@@ -110,10 +116,26 @@ export function LiveWaitingBackdrop({
     if (!hasWaitingVideo) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let failures = 0;
+    // No source (403, a bad payload) or a network error: retry after 5 s, then 30 s, then keep the poster.
+    const retryOrGiveUp = () => {
+      const delay = WAITING_VIDEO_RETRY_DELAYS_MS[failures];
+      failures += 1;
+      if (delay === undefined) {
+        setSourceState({ scope, source: null });
+        return;
+      }
+      timer = setTimeout(load, delay);
+    };
     const load = () => {
+      timer = null;
       void fetchLiveWaitingSource(vendorId, liveId)
-        .then((next) => { if (!disposed) setSourceState({ scope, source: next }); })
-        .catch(() => { if (!disposed) setSourceState({ scope, source: null }); });
+        .then((next) => {
+          if (disposed) return;
+          if (next) setSourceState({ scope, source: next });
+          else retryOrGiveUp();
+        })
+        .catch(() => { if (!disposed) retryOrGiveUp(); });
     };
     // Before the 60-minute window only the poster shows; the source is asked for when it opens.
     const openAt = Date.now() + waitingVideoFetchDelayMs(scheduledAt, serverNow);

@@ -736,6 +736,7 @@ describe("LivePlayback checkout", () => {
 
     expect(textContent(tree)).toContain("此活動目前無法觀看");
     expect(textContent(tree)).not.toContain("直播容量目前暫停服務");
+    expect(textContent(tree)).not.toContain("直播暫時無法播放");
     // D-47: the unavailable notice no longer explains capacity or media loading.
     expect(textContent(tree)).not.toContain("這不是直播容量暫停");
     expect(textContent(tree)).not.toContain("媒體來源");
@@ -1134,8 +1135,10 @@ describe("LivePlayback checkout", () => {
 
     expect(video).toBeUndefined();
     expect(alerts.map((alert) => textContent(alert))).toContain(
-      "直播播放額度已用完播放已暫停。請聯絡主辦人調整直播額度，完成後再重新整理頁面。",
+      "直播已暫停播放請稍後重新整理頁面；如果一直無法觀看，可以聯絡主辦單位。",
     );
+    // D-47: viewers never see quota wording.
+    expect(alerts.map((alert) => textContent(alert)).join("")).not.toMatch(/額度/);
 
   });
 
@@ -1585,6 +1588,23 @@ describe("LivePlayback checkout", () => {
     expect(pageCopy).not.toContain("不會模擬真人留言或購買行為");
     expect(pageCopy).not.toContain("腳本");
     expect(pageCopy).not.toContain("預錄");
+  });
+
+  it("tells viewers in plain words when the room cannot be entered (D-47)", () => {
+    const tree = renderLive({ admissionRequired: true, videoUrl: "https://video.example.test/recording.mp4" });
+    const overlay = findElements(tree, (element) => (
+      typeof element.type === "function" && element.type.name === "LiveAdmissionOverlay"
+    ))[0];
+    if (!overlay || typeof overlay.type !== "function") throw new Error("Expected the admission overlay");
+    const render = overlay.type as (props: { status: string }) => unknown;
+
+    expect(textContent(render({ status: "checking" }))).toBe("正在進入直播間…請稍候，馬上就好。");
+    const blocked = textContent(render({ status: "blocked" }));
+    expect(blocked).toBe("直播暫時無法播放請稍後再回來，或重新整理頁面。");
+    for (const copy of [textContent(render({ status: "checking" })), blocked]) {
+      expect(copy).not.toMatch(/容量|來源|建立播放/);
+    }
+    expect(render({ status: "admitted" })).toBeNull();
   });
 
   it("does not expose products before a valid spotlight event and shows them at the trigger second", () => {

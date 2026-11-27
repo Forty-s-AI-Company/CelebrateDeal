@@ -94,7 +94,7 @@ try {
     const nextGet = await fallbackPage.evaluate(() => window.indexOfRequest("updates", 1));
     await fallbackPage.evaluate(index => window.answer(index, {}, 409), nextOpen);
     await fallbackPage.evaluate(index => window.answer(index, {}, 401), nextGet);
-    await expect(fallbackPage.getByRole("alert")).toContainText("入場驗證已失效");
+    await expect(fallbackPage.getByRole("alert")).toContainText("連線已中斷");
     await expect(fallbackPage.getByTestId("live-question-spotlight")).toHaveCount(0);
     await expect(fallbackPage.getByTestId("live-advanced-interaction")).toHaveCount(0);
     await expect(fallbackPage.getByRole("button", { name: "提問", exact: true })).toHaveCount(0);

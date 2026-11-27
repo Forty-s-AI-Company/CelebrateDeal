@@ -200,6 +200,75 @@ describe("LiveWaitingBackdrop 60-minute window", () => {
   });
 });
 
+describe("LiveWaitingBackdrop retries (review m-C)", () => {
+  const refused = () => jsonResponse({ error: "Waiting video unavailable" }, 403);
+  const served = () => jsonResponse({ playbackUrl: "https://video.example.test/waiting-loop.mp4" });
+  const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+  const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("asks again after 5 seconds and then after 30 more, and plays once a source arrives", async () => {
+    fetchMock
+      .mockImplementationOnce(async () => refused())
+      .mockImplementationOnce(async () => { throw new Error("offline"); })
+      .mockImplementationOnce(async () => served());
+    await render();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("video")).toBeNull();
+
+    await advance(4_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await flush();
+
+    await advance(29_999);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await advance(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await flush();
+    expect(container.querySelector('[data-testid="live-waiting-video"]')?.getAttribute("src")).toBe("https://video.example.test/waiting-loop.mp4");
+    for (const [url] of fetchMock.mock.calls) expect(url).toBe("/api/live-waiting-source?vendorId=vendor-1&liveId=live-1");
+  });
+
+  it("stops after 3 requests in all and keeps the poster", async () => {
+    fetchMock.mockImplementation(async () => refused());
+    await render();
+    await advance(5_000);
+    await flush();
+    await advance(30_000);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await advance(10 * 60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(container.querySelector("video")).toBeNull();
+    expect((container.querySelector('[data-testid="live-waiting-backdrop"]') as HTMLElement).dataset.waitingVideo).toBe("off");
+  });
+
+  it("does not retry after a source is served", async () => {
+    fetchMock.mockImplementation(async () => served());
+    await render();
+    await advance(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a pending retry when the room closes", async () => {
+    fetchMock.mockImplementation(async () => refused());
+    await render();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => root.render(<div data-testid="main-player" />));
+    await advance(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("waiting source projection", () => {
   it("accepts only a safe http(s) URL and a positive lifetime", () => {
     expect(projectWaitingVideoSource({ playbackUrl: "https://v.example.test/a.mp4" })).toEqual({ playbackUrl: "https://v.example.test/a.mp4" });

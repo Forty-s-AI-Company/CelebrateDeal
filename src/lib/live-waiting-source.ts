@@ -6,8 +6,8 @@ import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
 import {
   isWaitingVideoPlayable,
   isWithinWaitingVideoWindow,
+  waitingVideoGraceSeconds,
   WAITING_VIDEO_READINESS_SELECT,
-  WAITING_VIDEO_TOKEN_GRACE_SECONDS,
 } from "@/lib/live-waiting-video";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { readVendorStreamUsageSeconds } from "@/lib/stream-usage-counter";
@@ -20,11 +20,14 @@ import { signVideoUrl, STREAM_LIVE_TOKEN_TTL_SECONDS } from "@/lib/cloudflare-st
  *   綁定、而且屬於同一個 vendor 的影片，不能被拿來播任意影片。
  * - 只在這位觀眾自己的場次（常青場、指定場次或共同開播時間）仍在等候、而且距離
  *   開播 60 分鐘以內時回應；更早只顯示海報，開播後主影片接手，這裡改回 403。
- * - 影片必須是 5 分鐘以內、長度已知的點播影片，而且不是這場的主影片（審查 M-1）。
+ *   窗口上限是開播時間＋寬限：VOD 與預錄排程 60 秒；手動開播的即時直播 30 分鐘
+ *   （主播晚開時觀眾仍在等候室，審查 m-B），超過就不再提供。
+ * - 影片必須是 5 分鐘以內、長度已知的點播影片，而且不是這場的主影片（審查 M-1）；
+ *   商家自填網址的影片不能指向 Cloudflare Stream（審查 m-A）。
  * - 不經直播容量入場（不建立 LiveViewerSession、不占同時觀看人數），也不寫
  *   Stream 用量帳本：與報名頁宣傳影片相同，屬於開播前的公開預告素材。商家
  *   授權被撤銷或本月 Stream 分鐘數已用完時不提供（觀眾只看到海報）。
- * - Cloudflare 影片以 F-093 短效 token 簽章（10 分鐘，且不晚於這位觀眾的開播時間＋60 秒），
+ * - Cloudflare 影片以 F-093 短效 token 簽章（10 分鐘，且不晚於這位觀眾的開播時間＋寬限），
  *   播放器到期前回到這裡續期。
  */
 type WaitingSourceInput = {
@@ -139,7 +142,11 @@ export async function resolveLiveWaitingSource(db: PrismaClient, input: WaitingS
   if (runtime.evergreen && !runtime.evergreen.assigned) return null;
   // The viewer's own start: the fixed session they follow, their evergreen session, or the shared start.
   const startsAt = fixedSession?.startAt ?? runtime.evergreen?.sessionStartAt ?? live.scheduledAt;
-  if (!isWithinWaitingVideoWindow(startsAt.getTime(), now.getTime())) return null;
+  const graceSeconds = waitingVideoGraceSeconds({
+    streamMode: live.streamMode,
+    followsSharedStart: !fixedSession && !runtime.evergreen,
+  });
+  if (!isWithinWaitingVideoWindow(startsAt.getTime(), now.getTime(), graceSeconds)) return null;
   if (!await vendorStreamDeliveryAllowed(db, input.vendorId, now)) return null;
 
   const storedUrl = parseSafeExternalHttpUrl(waitingVideo.videoUrl);
@@ -148,8 +155,8 @@ export async function resolveLiveWaitingSource(db: PrismaClient, input: WaitingS
     vendorId: input.vendorId,
     now,
     ttlSeconds: STREAM_LIVE_TOKEN_TTL_SECONDS,
-    // A leaked URL stops working shortly after this viewer's show starts.
-    notAfter: new Date(startsAt.getTime() + WAITING_VIDEO_TOKEN_GRACE_SECONDS * 1_000),
+    // A leaked URL stops working shortly after this viewer's show starts (30 minutes for a manual start).
+    notAfter: new Date(startsAt.getTime() + graceSeconds * 1_000),
   });
   if (!signed) return null;
   return signed.signed

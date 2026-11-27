@@ -99,7 +99,7 @@ export function PersistentLivePlaybackRegistration({ live }: { live: LivePageDat
       <div role="status" className="max-w-sm rounded-3xl border border-white/15 bg-white/10 p-6 text-center shadow-2xl">
         <p className="text-xs font-black uppercase tracking-[0.22em] text-white/60">{live.brand.name}</p>
         <h1 className="mt-3 text-2xl font-black">{live.title}</h1>
-        <p className="mt-3 text-sm text-white/75">正在確認直播資格並載入播放器…</p>
+        <p className="mt-3 text-sm text-white/75">正在進入直播間…</p>
       </div>
     </main>
   );

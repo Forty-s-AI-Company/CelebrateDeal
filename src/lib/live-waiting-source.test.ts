@@ -9,7 +9,14 @@ const db = {
   liveViewerSession: { findUnique: vi.fn(), create: vi.fn() },
 };
 
+vi.mock("@/lib/live-fixed-sessions-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/live-fixed-sessions-store")>();
+  // Delegates to the real resolver unless a test supplies the viewer's own fixed session.
+  return { ...actual, resolveViewerFixedSessionForLive: vi.fn(actual.resolveViewerFixedSessionForLive) };
+});
+
 import { resolveEvergreenViewerSession } from "@/lib/evergreen-viewer-session";
+import { resolveViewerFixedSessionForLive } from "@/lib/live-fixed-sessions-store";
 import { resolveLiveWaitingSource } from "@/lib/live-waiting-source";
 
 const now = new Date("2026-11-27T10:00:00.000Z");
@@ -165,6 +172,63 @@ describe("resolveLiveWaitingSource", () => {
     expect(db.vendorUsageLimit.findUnique).not.toHaveBeenCalled();
   });
 
+  it("refuses a self-reported URL that points at Cloudflare Stream, whatever length it claims (review m-A)", async () => {
+    const uid = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+    for (const videoUrl of [
+      `https://videodelivery.net/${uid}/manifest/video.m3u8`,
+      `https://customer-abc123.cloudflarestream.com/${uid}/manifest/video.m3u8`,
+      `https://videodelivery.net/${uid}/manifest/video.m3u8?clientBandwidthHint=10`,
+      `https://iframe.videodelivery.net/${uid}`,
+    ]) {
+      db.live.findFirst.mockResolvedValue(liveRecord({ waitingVideo: { ...waitingVideo, durationSec: 60, videoUrl } }));
+      await expect(resolveLiveWaitingSource(db as never, input), videoUrl).resolves.toBeNull();
+    }
+  });
+
+  it("uses the viewer's own fixed session, not Live.scheduledAt, for the 60-minute window (NIT 3)", async () => {
+    // The shared start is 30 minutes ahead (inside the window) ...
+    const fixedLive = liveRecord({ sessionMode: "fixed_sessions", scheduledAt: new Date(now.getTime() + 30 * 60_000) });
+    db.live.findFirst.mockResolvedValue(fixedLive);
+    const ownSession = vi.mocked(resolveViewerFixedSessionForLive);
+    // ... but this viewer's session starts in 90 minutes: poster only.
+    ownSession.mockResolvedValueOnce({ id: "session-late", startAt: new Date(now.getTime() + 90 * 60_000), status: "open" } as never);
+    await expect(resolveLiveWaitingSource(db as never, { ...input, registrationToken: "synthetic" })).resolves.toBeNull();
+    // Their session 30 minutes ahead is served.
+    ownSession.mockResolvedValueOnce({ id: "session-soon", startAt: new Date(now.getTime() + 30 * 60_000), status: "open" } as never);
+    await expect(resolveLiveWaitingSource(db as never, { ...input, registrationToken: "synthetic" }))
+      .resolves.toEqual({ playbackUrl: "https://video.example.test/waiting-loop.mp4" });
+  });
+
+  describe("a manually started live show (OBS or browser broadcast, review m-B)", () => {
+    const manual = (minutesSinceStart: number, overrides: Record<string, unknown> = {}) => liveRecord({
+      streamMode: "live",
+      scheduledAt: new Date(now.getTime() - minutesSinceStart * 60_000),
+      ...overrides,
+    });
+
+    it("keeps serving the loop for 30 minutes after the start while the host has not gone live", async () => {
+      for (const minutes of [0, 1, 29]) {
+        db.live.findFirst.mockResolvedValue(manual(minutes));
+        await expect(resolveLiveWaitingSource(db as never, input), `${minutes} min late`).resolves.not.toBeNull();
+      }
+      for (const minutes of [30, 31, 120]) {
+        db.live.findFirst.mockResolvedValue(manual(minutes));
+        await expect(resolveLiveWaitingSource(db as never, input), `${minutes} min late`).resolves.toBeNull();
+      }
+    });
+
+    it("stops once the host is live", async () => {
+      db.live.findFirst.mockResolvedValue(manual(5, { status: "live", startedAt: new Date(now.getTime() - 60_000) }));
+      await expect(resolveLiveWaitingSource(db as never, input)).resolves.toBeNull();
+    });
+
+    it("keeps the 60-second grace for a scheduled pre-recorded show", async () => {
+      // Same lateness as above, but VOD: the main video plays from the start.
+      db.live.findFirst.mockResolvedValue(liveRecord({ streamMode: "vod", scheduledAt: new Date(now.getTime() - 5 * 60_000) }));
+      await expect(resolveLiveWaitingSource(db as never, input)).resolves.toBeNull();
+    });
+  });
+
   it("stops answering once the show starts: the main video takes over", async () => {
     db.live.findFirst.mockResolvedValue(liveRecord({
       scheduledAt: new Date("2026-11-27T09:59:00.000Z"),
@@ -208,6 +272,30 @@ describe("resolveLiveWaitingSource", () => {
       await expect(resolveLiveWaitingSource(db as never, { ...input, evergreenToken: "eg1.forged.value" })).resolves.toBeNull();
     });
 
+    it("uses the visitor's own evergreen session, not Live.scheduledAt, for the 60-minute window (NIT 3)", async () => {
+      // 18:07 Taipei. Live.scheduledAt is 23 minutes ahead, but the daily session is at 20:00 (113 minutes ahead).
+      const enteredAt = new Date("2026-11-27T10:07:00.000Z");
+      const daily = (time: string) => liveRecord({
+        isEvergreen: true,
+        evergreenScheduleMode: "recurring_daily",
+        evergreenDailyTimes: [time],
+        scheduledAt: new Date("2026-11-27T10:30:00.000Z"),
+      });
+      const late = daily("20:00");
+      const lateSession = resolveEvergreenViewerSession({ live: late as never, vendorTimezone: "Asia/Taipei", token: null, intent: "claim", now: enteredAt });
+      expect(lateSession?.sessionStartAt.toISOString()).toBe("2026-11-27T12:00:00.000Z");
+      db.live.findFirst.mockResolvedValue(late);
+      await expect(resolveLiveWaitingSource(db as never, { ...input, now: enteredAt, evergreenToken: lateSession!.issuedToken }))
+        .resolves.toBeNull();
+
+      // Control: a 18:30 session is inside the window and served.
+      const soon = daily("18:30");
+      const soonSession = resolveEvergreenViewerSession({ live: soon as never, vendorTimezone: "Asia/Taipei", token: null, intent: "claim", now: enteredAt });
+      db.live.findFirst.mockResolvedValue(soon);
+      await expect(resolveLiveWaitingSource(db as never, { ...input, now: enteredAt, evergreenToken: soonSession!.issuedToken }))
+        .resolves.toEqual({ playbackUrl: "https://video.example.test/waiting-loop.mp4" });
+    });
+
     it("serves the loop while the visitor's own session is still ahead", async () => {
       // 18:07 Taipei: the visitor's just-in-time session starts at the next half hour.
       const enteredAt = new Date("2026-11-27T10:07:00.000Z");
@@ -246,6 +334,26 @@ describe("resolveLiveWaitingSource", () => {
       expect(source?.expiresInSeconds).toBe(3 * 60 + 60);
       const claims = JSON.parse(Buffer.from(new URL(source!.playbackUrl).pathname.split("/")[1]!.split(".")[1]!, "base64url").toString("utf8"));
       expect(claims.exp).toBe(now.getTime() / 1_000 + 3 * 60 + 60);
+    });
+
+    it("caps the token at the start plus 30 minutes for a manually started live show (review m-B)", async () => {
+      db.live.findFirst.mockResolvedValue(liveRecord({
+        streamMode: "live",
+        // The host is 25 minutes late: 5 minutes of the 30-minute grace remain.
+        scheduledAt: new Date(now.getTime() - 25 * 60_000),
+        waitingVideo: {
+          ...waitingVideo,
+          sourceType: "cloudflare_stream",
+          cloudflareReadyToStream: true,
+          videoUrl: `https://videodelivery.net/${uid}/manifest/video.m3u8`,
+          cloudflareStreamUid: uid,
+          cloudflarePlaybackId: uid,
+        },
+      }));
+      const source = await resolveLiveWaitingSource(db as never, input);
+      expect(source?.expiresInSeconds).toBe(5 * 60);
+      const claims = JSON.parse(Buffer.from(new URL(source!.playbackUrl).pathname.split("/")[1]!.split(".")[1]!, "base64url").toString("utf8"));
+      expect(claims.exp).toBe(now.getTime() / 1_000 + 5 * 60);
     });
 
     it("returns a short-lived token URL for the bound uid with its lifetime, so the player renews here", async () => {
