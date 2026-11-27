@@ -377,6 +377,49 @@ describe("PublicLivePage", () => {
     });
   });
 
+  describe("開播前等候影片", () => {
+    const loop = {
+      vendorId: "vendor-1",
+      sourceType: "cloudflare_stream",
+      status: "ready",
+      cloudflareReadyToStream: true,
+      cloudflareLiveInputUid: null,
+      liveInputStatus: null,
+    };
+    const waitingRender = async (waitingVideo: unknown, state = "waiting") => {
+      mocks.resolveLiveRuntime.mockReturnValue({ state, playbackStartSeconds: null });
+      mocks.findFirst.mockResolvedValue({ ...publicLive, heroImageUrl: "https://img.example.test/poster.jpg", waitingVideoId: "loop-1", waitingVideo });
+      const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+      return element.props.live as Record<string, unknown>;
+    };
+
+    it("loads only the waiting video's readiness fields, never its URL or provider ids", async () => {
+      await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+      expect(mocks.findFirst.mock.calls[0]![0].include.waitingVideo).toEqual({
+        select: { vendorId: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true },
+      });
+    });
+
+    it("passes the waiting room a flag only, with the poster it already had", async () => {
+      const props = await waitingRender(loop);
+      expect(props.hasWaitingVideo).toBe(true);
+      expect(props.heroImageUrl).toBe("https://img.example.test/poster.jpg");
+      const serialized = JSON.stringify(props);
+      expect(serialized).not.toContain("loop-1");
+      expect(props).not.toHaveProperty("waitingVideoId");
+      expect(props).not.toHaveProperty("waitingVideo");
+    });
+
+    it("omits the flag after the start, for another vendor's video and for a source that cannot loop", async () => {
+      expect(await waitingRender(loop, "playing")).not.toHaveProperty("hasWaitingVideo");
+      expect(await waitingRender(loop, "replay")).not.toHaveProperty("hasWaitingVideo");
+      expect(await waitingRender({ ...loop, vendorId: "vendor-2" })).not.toHaveProperty("hasWaitingVideo");
+      expect(await waitingRender({ ...loop, sourceType: "cloudflare_live", cloudflareLiveInputUid: "a".repeat(32), liveInputStatus: "created" })).not.toHaveProperty("hasWaitingVideo");
+      expect(await waitingRender({ ...loop, cloudflareReadyToStream: false })).not.toHaveProperty("hasWaitingVideo");
+      expect(await waitingRender(null)).not.toHaveProperty("hasWaitingVideo");
+    });
+  });
+
   it.each([
     ["draft", "vendor-1"],
     ["published", "vendor-2"],

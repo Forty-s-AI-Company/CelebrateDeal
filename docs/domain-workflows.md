@@ -34,6 +34,14 @@
 - `LiveChatMessage.authorName` 仍是報名姓名；商家聊天匯出多一欄 `nickname`，統計不變，暱稱不進任何成效統計。虛擬角色訊息也畫頭像，標示規則不變。
 - 契約見 [API 契約](codex-goal/API_CONTRACT_REGISTRY.md) 的 `/api/live-viewer-profile` 與 [Prisma 不變量](codex-goal/PRISMA_INVARIANTS.md) 的 `20261126100000_live_viewer_profiles`。
 
+### 開播前等候室的海報與等候影片（2026-11-27）
+
+開播前（觀眾自己的 runtime 為 waiting）等候室以直播封面當滿版背景；直播設定精靈「內容」步驟可選填「開播前等候影片」（只列商家自己已就緒的點播影片：`url`、`cloudflare_stream`），有設定時背景改為該影片靜音、循環、自動播放（封面當預覽圖），只有「開啟聲音」按鈕，沒有暫停、進度條或控制列；開播後元件卸載、釋放影片，由主影片接手。
+
+- 綁定以 `(vendorId, waitingVideoId)` 複合外鍵限定同租戶；公開頁只帶布林 `hasWaitingVideo`，播放來源由 `/api/live-waiting-source` 依 vendorId＋liveId 解析這場綁定的影片（不收影片 id），只在等候時回應，Cloudflare 影片用 F-093 短效簽章並續期。
+- 等候影片不入場、不占同時觀看人數、不寫 Stream 用量帳本（與報名頁宣傳影片相同）；商家授權撤銷或本月分鐘數用完時不提供，只顯示海報。細節見 [Prisma 不變量](codex-goal/PRISMA_INVARIANTS.md) 的 `20261127100000_live_waiting_video`。
+- 觀眾端不出現技術字句（D-47）：等候室標籤為「即將開播」。
+
 ### 指定場次（fixed sessions）
 
 一場預錄直播（VOD、非常青、影片長度已知）可設多個開播時間（`Live.sessionMode = fixed_sessions`，`LiveSession` 列）。權威資料與規則：

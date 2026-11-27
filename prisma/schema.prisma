@@ -562,6 +562,7 @@ model Video {
   thumbnailAsset              ImageAsset?        @relation("VideoThumbnailImageAsset", fields: [vendorId, thumbnailAssetId], references: [vendorId, id], onDelete: Restrict)
   archiveState                VideoArchiveState?
   lives                       Live[]
+  waitingRoomLives            Live[]             @relation("LiveWaitingVideo")
   registrationFormPromoVideos RegistrationForm[] @relation("RegistrationFormPromoVideo")
 
   @@unique([vendorId, id])
@@ -855,6 +856,9 @@ model Live {
   replayAvailableUntil      DateTime?
   heroImageUrl                   String?
   heroImageAssetId               String?
+  /// Pre-recorded loop shown muted behind the waiting room before the start;
+  /// a same-vendor VOD (`url` or `cloudflare_stream`), never the main video's playback path.
+  waitingVideoId                 String?
   accentCopy                     String?
   replayEnabled                  Boolean                  @default(true)
   streamMode                     String                   @default("vod")
@@ -888,6 +892,10 @@ model Live {
   vendor                     Vendor                          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   heroImageAsset             ImageAsset?                     @relation("LiveHeroImageAsset", fields: [vendorId, heroImageAssetId], references: [vendorId, id], onDelete: Restrict)
   video                      Video?                          @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  /// Composite key: only a video of the Live's own vendor can be bound. NO ACTION
+  /// (checked at the end of the statement) refuses deleting a bound video and
+  /// still lets a Vendor delete cascade to both tables.
+  waitingVideo               Video?                          @relation("LiveWaitingVideo", fields: [vendorId, waitingVideoId], references: [vendorId, id], onDelete: NoAction)
   form                       RegistrationForm?               @relation(fields: [formId], references: [id], onDelete: SetNull)
   messageTemplate            MessageTemplate?                @relation("LiveRegistrationTemplate", fields: [messageTemplateId], references: [id], onDelete: SetNull)
   liveReminderTemplate       MessageTemplate?                @relation("LiveReminderTemplate", fields: [vendorId, liveReminderTemplateId], references: [vendorId, id], onDelete: Restrict)
@@ -923,6 +931,7 @@ model Live {
 
   @@unique([vendorId, id])
   @@index([heroImageAssetId])
+  @@index([waitingVideoId])
   @@index([vendorId, status, replayAvailableUntil])
   @@index([vendorId, projectId, status])
 }

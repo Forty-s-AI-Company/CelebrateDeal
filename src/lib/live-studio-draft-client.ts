@@ -66,6 +66,7 @@ export function liveStudioDraftFromFormData(data: FormData, activeStep: number):
     videoId: stringValue(data, "videoId"),
     heroImageUrl: stringValue(data, "heroImageUrl"),
     heroImageAssetId: stringValue(data, "heroImageAssetId"),
+    ...(stringValue(data, "waitingVideoId").trim() ? { waitingVideoId: stringValue(data, "waitingVideoId").trim() } : {}),
     interactionScriptId: stringValue(data, "interactionScriptId"),
     affiliateMode: stringValue(data, "affiliateMode"),
     defaultAffiliateCode: stringValue(data, "defaultAffiliateCode"),

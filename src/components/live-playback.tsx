@@ -21,6 +21,7 @@ import {
 import { EVERGREEN_CONSULTATION_EVENT_TYPE } from "@/lib/evergreen-offer-timeline";
 import { LivePurchaseBroadcastPanel } from "@/components/live-purchase-broadcast-panel";
 import { LiveViewerPrivateChat } from "@/components/live-viewer-private-chat";
+import { LiveWaitingBackdrop } from "@/components/live-waiting-backdrop";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
@@ -99,6 +100,12 @@ export type LivePageData = {
   description: string | null;
   accentCopy: string | null;
   heroImageUrl: string | null;
+  /**
+   * The waiting room has a background video. A flag only: its source comes from
+   * /api/live-waiting-source, which serves this Live's own bound video while
+   * the viewer's session is still waiting.
+   */
+  hasWaitingVideo?: true;
   /** Only used by direct component fixtures; public pages resolve this after admission. */
   videoUrl?: string | null;
   vendorId: string;
@@ -320,14 +327,13 @@ function LiveWaitingRoom({ live, countdownSeconds }: { live: LivePageData; count
     <div data-testid="live-waiting-room" role="status" className="relative z-10 mx-4 mb-24 rounded-3xl border border-white/15 bg-black/45 p-6 text-center shadow-2xl backdrop-blur-md">
       <div className="mx-auto grid max-w-xs gap-3">
         {live.brand.logoUrl ? <Image src={live.brand.logoUrl} alt="" width={64} height={64} unoptimized className="mx-auto h-16 w-16 rounded-2xl object-cover" /> : null}
-        <p className="text-xs font-black uppercase tracking-[0.24em] text-white/60">品牌等候室</p>
+        <p className="text-xs font-black uppercase tracking-[0.24em] text-white/60">即將開播</p>
         <h2 className="text-2xl font-black">{live.brand.name}</h2>
         <p className="text-sm leading-6 text-white/75">{live.title} 即將開始，請先留在這裡。</p>
         {sessionLabel ? <p className="text-sm font-bold text-white/85">你的場次：{sessionLabel}</p> : null}
         <p className="rounded-2xl bg-white/10 px-4 py-3 text-lg font-black" aria-live="polite">
           {evergreen ? evergreenCountdownLabel(countdownSeconds) : waitingCountdownLabel(countdownSeconds)}
         </p>
-        <p className="text-xs leading-5 text-white/55">直播開始前不會建立直播容量連線，也不會載入播放來源。</p>
       </div>
     </div>
   );
@@ -361,7 +367,6 @@ function LiveUnavailableNotice({ live }: { live: LivePageData }) {
         <p className="text-xs font-black uppercase tracking-[0.24em] text-white/60">活動狀態</p>
         <h2 className="text-2xl font-black">此活動目前無法觀看</h2>
         <p className="text-sm leading-6 text-white/75">「{live.title}」目前沒有可用的直播或回放，可能尚未開放或回放期限已到。</p>
-        <p className="text-xs leading-5 text-white/55">這不是直播容量暫停；頁面不會建立播放或載入媒體來源。</p>
       </div>
     </div>
   );
@@ -1759,11 +1764,36 @@ export function useHlsPlayback({
   }, [playableSource, playableUrl, videoRef]);
 }
 
+/** The same condition LiveIdleState uses to show the waiting room card (never inside the checkout mini player). */
+function isWaitingRoomView(live: LivePageData, runtimeState: LiveRuntimeState, isCheckoutOverlay: boolean) {
+  if (runtimeState !== "waiting" || isCheckoutOverlay) return false;
+  return !(live.evergreen && !live.evergreen.assigned);
+}
+
+/**
+ * The player area while no video is mounted. In the waiting room the poster
+ * (and the optional waiting video) fill it with their own darker shade;
+ * otherwise the poster stays a plain cover background.
+ */
+function LivePlayerIdleBackdrop({ live, isWaitingRoom }: { live: LivePageData; isWaitingRoom: boolean }) {
+  if (isWaitingRoom) {
+    return <LiveWaitingBackdrop vendorId={live.vendorId} liveId={live.id} heroImageUrl={live.heroImageUrl} hasWaitingVideo={live.hasWaitingVideo === true} />;
+  }
+  return <div className="h-full bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />;
+}
+
+/** The player's top and bottom shade; the waiting backdrop brings its own. */
+function LivePlayerShade({ hidden }: { hidden: boolean }) {
+  if (hidden) return null;
+  return <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/85" />;
+}
+
 export function LivePlayback({ live }: { live: LivePageData }) {
   const router = useRouter(); const pathname = usePathname();
   const isCheckoutOverlay = isInternalCheckoutPath(pathname);
   const runtimeState = getClientRuntimeState(live);
   const isPlayableRuntime = isPlayableRuntimeState(runtimeState);
+  const isWaitingRoom = isWaitingRoomView(live, runtimeState, isCheckoutOverlay);
   const [panel, setPanel] = useState<"chat" | "products" | "form">("chat");
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [reportedProgress, setReportedProgress] = useState<Set<number>>(() => new Set());
@@ -2001,10 +2031,10 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               onVolumeChange={(event) => setIsPlaybackMuted(event.currentTarget.muted)}
             />
           ) : (
-            <div className="h-full bg-cover bg-center" style={{ backgroundImage: live.heroImageUrl ? `url(${live.heroImageUrl})` : undefined }} />
+            <LivePlayerIdleBackdrop live={live} isWaitingRoom={isWaitingRoom} />
           )}
           <BrowserMediaReceiver source={playableSource} videoRef={videoRef} liveId={live.id} vendorId={live.vendorId} />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/85" />
+          <LivePlayerShade hidden={isWaitingRoom} />
           {isCheckoutOverlay && isPlayableRuntime ? (
             <PersistentMiniPlayerControls title={live.title} videoRef={videoRef} isPaused={isPlaybackPaused} isMuted={isPlaybackMuted}
               isExpanded={isMiniPlayerExpanded} onBack={() => router.back()} onMutedChange={setIsPlaybackMuted}

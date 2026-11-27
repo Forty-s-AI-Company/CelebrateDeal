@@ -1410,7 +1410,7 @@ test("public live page renders mobile-first commerce surface", async ({ page }, 
   await page.goto(`/live/${seed.liveSlug}`);
   const waitingRoom = page.getByTestId("live-waiting-room");
   await expect(waitingRoom).toBeVisible();
-  await expect(waitingRoom.getByText("品牌等候室", { exact: true })).toBeVisible();
+  await expect(waitingRoom.getByText("即將開播", { exact: true })).toBeVisible();
   await expect(waitingRoom.getByRole("heading", { name: "E2E 測試品牌", exact: true })).toBeVisible();
   await expect(waitingRoom.getByText("E2E 直播頁 即將開始，請先留在這裡。", { exact: true })).toBeVisible();
   await expect(waitingRoom.getByText(/^距離開播 \d{2}:\d{2}$/)).toBeVisible();

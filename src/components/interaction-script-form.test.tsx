@@ -138,6 +138,7 @@ function renderForm({ roles = [], events = [] }: { roles?: InteractionRole[]; ev
       replayAvailableUntil: null,
       heroImageUrl: null,
       heroImageAssetId: null,
+      waitingVideoId: null,
       accentCopy: null,
       replayEnabled: true,
       streamMode: "vod",

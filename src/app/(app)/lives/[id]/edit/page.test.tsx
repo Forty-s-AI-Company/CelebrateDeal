@@ -243,6 +243,31 @@ describe("EditLivePage unified Live Studio", () => {
     }), undefined);
   });
 
+  it("keeps a ready pre-recorded 開播前等候影片 and drops one that can no longer loop", async () => {
+    const lastInitialValues = () => (mocks.liveStepperForm.mock.calls.at(-1) as unknown as [{ initialValues: Record<string, unknown> }])[0].initialValues;
+    mocks.videoFindMany.mockResolvedValue([
+      { id: "loop-1", title: "等候循環", sourceType: "url" },
+      { id: "obs-input", title: "OBS", sourceType: "cloudflare_live" },
+    ]);
+    mocks.liveFindFirst.mockResolvedValue({ ...live, interactionScriptId: null, waitingVideoId: "loop-1" });
+    let html = renderToStaticMarkup(await EditLivePage({ params: Promise.resolve({ id: "live-1" }), searchParams: Promise.resolve({}) }));
+    expect(html).not.toContain("開播前等候影片已無法播放");
+    expect(lastInitialValues()).toMatchObject({ waitingVideoId: "loop-1" });
+
+    for (const waitingVideoId of ["obs-input", "archived-or-foreign"]) {
+      mocks.liveFindFirst.mockResolvedValue({ ...live, interactionScriptId: null, waitingVideoId });
+      html = renderToStaticMarkup(await EditLivePage({ params: Promise.resolve({ id: "live-1" }), searchParams: Promise.resolve({}) }));
+      expect(html).toContain("開播前等候影片已無法播放");
+      expect(lastInitialValues()).not.toHaveProperty("waitingVideoId");
+    }
+
+    // Without one, the draft has no key at all, so earlier saved drafts still compare equal.
+    mocks.liveFindFirst.mockResolvedValue({ ...live, interactionScriptId: null, waitingVideoId: null });
+    html = renderToStaticMarkup(await EditLivePage({ params: Promise.resolve({ id: "live-1" }), searchParams: Promise.resolve({}) }));
+    expect(html).not.toContain("開播前等候影片");
+    expect(lastInitialValues()).not.toHaveProperty("waitingVideoId");
+  });
+
   it("warns and unbinds a live reminder template that is no longer available", async () => {
     mocks.liveFindFirst.mockResolvedValue({
       ...live,

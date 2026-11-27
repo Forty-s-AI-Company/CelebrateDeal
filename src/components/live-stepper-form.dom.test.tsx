@@ -977,3 +977,48 @@ describe("LiveStepperForm 就地建立 drawers", () => {
     }
   });
 });
+
+describe("LiveStepperForm 開播前等候影片", () => {
+  const mixedVideos = [
+    { id: "video-cf-3341", title: "原型食物講座（33:41）", sourceType: "cloudflare_stream" },
+    { id: "video-url-loop", title: "等候循環", sourceType: "url" },
+    { id: "video-live-input", title: "OBS 推流", sourceType: "cloudflare_live" },
+    { id: "video-browser", title: "瀏覽器直播", sourceType: "browser_live" },
+  ];
+
+  it("offers only pre-recorded videos of the library and is optional", async () => {
+    await act(async () => { root.render(<LiveStepperForm {...resources} videos={mixedVideos} />); });
+    const select = control<HTMLSelectElement>('select[name="waitingVideoId"]');
+    expect(Array.from(select.options).map((option) => [option.value, option.textContent])).toEqual([
+      ["", "不使用（開播前只顯示封面）"],
+      ["video-cf-3341", "原型食物講座（33:41）"],
+      ["video-url-loop", "等候循環"],
+    ]);
+    expect(select.value).toBe("");
+    expect(select.required).toBe(false);
+    // The main video select still offers every playable source.
+    expect(control<HTMLSelectElement>('select[name="videoId"]').options).toHaveLength(5);
+  });
+
+  it("serializes the choice only when one is made, so older drafts keep their exact payload", async () => {
+    await act(async () => { root.render(<LiveStepperForm {...resources} videos={mixedVideos} initialDraft={resumedDraft} />); });
+    const form = control<HTMLFormElement>("form");
+    expect(serializeLiveStudioDraft(form, LIVE_STUDIO_LAST_STEP_INDEX)).not.toHaveProperty("waitingVideoId");
+
+    const select = control<HTMLSelectElement>('select[name="waitingVideoId"]');
+    await act(async () => {
+      select.value = "video-url-loop";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(serializeLiveStudioDraft(form, LIVE_STUDIO_LAST_STEP_INDEX)).toMatchObject({ waitingVideoId: "video-url-loop" });
+  });
+
+  it("restores a saved choice", async () => {
+    const payload = LiveStudioDraftPayloadSchema.parse({ ...reportedPayload, waitingVideoId: "video-url-loop" });
+    await act(async () => {
+      root.render(<LiveStepperForm {...resources} videos={mixedVideos} initialDraft={{ ...resumedDraft, payload }} />);
+    });
+    expect(control<HTMLSelectElement>('select[name="waitingVideoId"]').value).toBe("video-url-loop");
+    expect(serializeLiveStudioDraft(control<HTMLFormElement>("form"), LIVE_STUDIO_LAST_STEP_INDEX)).toEqual(payload);
+  });
+});

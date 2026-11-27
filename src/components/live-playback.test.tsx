@@ -87,6 +87,8 @@ import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPa
 /** Hook-free components the shallow harness renders inline. */
 const RENDERED_COMPONENT_NAMES = [
   "LiveWaitingRoom",
+  "LivePlayerIdleBackdrop",
+  "LivePlayerShade",
   "LiveUnavailableNotice",
   "LiveIdleState",
   "EvergreenPreparingNotice",
@@ -654,8 +656,12 @@ describe("LivePlayback checkout", () => {
       videoUrl: "https://video.example.test/should-not-load.mp4",
     });
 
-    expect(textContent(tree)).toContain("品牌等候室");
+    expect(textContent(tree)).toContain("即將開播");
     expect(textContent(tree)).toContain("距離開播");
+    // D-47: no technical wording (capacity connection, playback source) in front of viewers.
+    expect(textContent(tree)).not.toContain("品牌等候室");
+    expect(textContent(tree)).not.toContain("直播容量");
+    expect(textContent(tree)).not.toContain("播放來源");
     expect(findElements(tree, (element) => element.type === "video" || element.type === "audio" || element.type === "iframe")).toHaveLength(0);
     await flushHookEffects();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -665,6 +671,46 @@ describe("LivePlayback checkout", () => {
     expect(navigation.refresh).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(5_000);
     expect(navigation.refresh.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("puts the poster and the waiting video behind the room, then hands over to the main player at the start", async () => {
+    const waiting = {
+      status: "scheduled",
+      runtimeState: "waiting" as const,
+      scheduledAt: new Date(Date.now() + 60_000).toISOString(),
+      serverNow: new Date(Date.now()).toISOString(),
+      admissionRequired: true,
+      heroImageUrl: "https://img.example.test/poster.jpg",
+      hasWaitingVideo: true as const,
+    };
+    const waitingTree = renderLive(waiting);
+    const backdrops = findElements(waitingTree, (element) => typeof element.type === "function" && element.type.name === "LiveWaitingBackdrop");
+    expect(backdrops).toHaveLength(1);
+    expect(backdrops[0]!.props).toEqual({
+      vendorId: live.vendorId,
+      liveId: live.id,
+      heroImageUrl: "https://img.example.test/poster.jpg",
+      hasWaitingVideo: true,
+    });
+    // The room's card stays on top; the main player is not mounted and its dark overlay is not doubled.
+    expect(findElements(waitingTree, (element) => element.props["data-testid"] === "live-waiting-room")).toHaveLength(1);
+    expect(findElements(waitingTree, (element) => element.type === "video")).toHaveLength(0);
+
+    // A room without the flag still gets the poster backdrop, but no video.
+    const posterOnly = findElements(renderLive({ ...waiting, hasWaitingVideo: undefined }), (element) => typeof element.type === "function" && element.type.name === "LiveWaitingBackdrop");
+    expect(posterOnly[0]!.props.hasWaitingVideo).toBe(false);
+
+    // The server moves the room to playing: the backdrop unmounts (it releases its video) and the main video takes over.
+    const playingTree = renderLive({ ...waiting, status: "live", runtimeState: "playing", videoUrl: "https://video.example.test/main.mp4", admissionRequired: false });
+    expect(findElements(playingTree, (element) => typeof element.type === "function" && element.type.name === "LiveWaitingBackdrop")).toHaveLength(0);
+    expect(findElements(playingTree, (element) => element.props["data-testid"] === "live-waiting-room")).toHaveLength(0);
+    expect(findElements(playingTree, (element) => element.type === "video")).toHaveLength(1);
+  });
+
+  it("never shows the waiting backdrop outside the waiting room", () => {
+    const isBackdrop = (element: ElementNode) => typeof element.type === "function" && element.type.name === "LiveWaitingBackdrop";
+    expect(findElements(renderLive({ status: "ended", runtimeState: "unavailable", hasWaitingVideo: true }), isBackdrop)).toHaveLength(0);
+    expect(findElements(renderLive({ status: "ended", runtimeState: "replay", hasWaitingVideo: true }), isBackdrop)).toHaveLength(0);
   });
 
   it("renders unavailable as a lifecycle state without admission, source, or media requests", async () => {
@@ -687,6 +733,9 @@ describe("LivePlayback checkout", () => {
 
     expect(textContent(tree)).toContain("此活動目前無法觀看");
     expect(textContent(tree)).not.toContain("直播容量目前暫停服務");
+    // D-47: the unavailable notice no longer explains capacity or media loading.
+    expect(textContent(tree)).not.toContain("這不是直播容量暫停");
+    expect(textContent(tree)).not.toContain("媒體來源");
     expect(findElements(tree, (element) => element.type === "video" || element.type === "audio" || element.type === "iframe")).toHaveLength(0);
     await flushHookEffects();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -1914,7 +1963,9 @@ describe("LivePlayback evergreen session", () => {
 
     const tree = renderLive(waiting);
     const text = textContent(tree);
-    expect(text).toContain("品牌等候室");
+    expect(text).toContain("即將開播");
+    expect(text).not.toContain("品牌等候室");
+    expect(text).not.toContain("播放來源");
     expect(text).toContain("你的場次：");
     expect(text).toContain("（Asia/Taipei）");
     expect(text).toContain("距離你的場次開始 01:30");
