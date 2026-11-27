@@ -31,6 +31,23 @@
 - **GitHub Dependency graph**：Settings → Code security 開啟 Dependency graph，Dependency review 檢查（`.github/workflows/dependency-review.yml`）才會生效；同一頁開啟 **Private vulnerability reporting**，讓外部回報安全問題有私下管道（`SECURITY.md`）。
 - **手動觸發一次 `security-audit.yml`**：Actions → Security audit (weekly) → Run workflow，確認 workflow 能成功跑完；有 high／critical advisory 時會開一個 `security-audit` issue，沒有時不開 issue（這是正常結果）。
 
+## 2026-11-28 新增 owner 動作
+
+- **O-26 測試站 R2 圖片上傳的 CORS 設定**：2026-11-28 的 staging 實跑（run 46044199230）確認，在瀏覽器上傳圖片時，取得上傳許可成功，但送到 R2 時被瀏覽器以 CORS 拒絕（`put_failure:ERR_FAILED`、`console_cors:1`、`console_csp:0`）。影響範圍不只示範腳本：測試站所有從瀏覽器上傳圖片的地方（直播海報、商品圖等）目前都會失敗。主對話沒有 Cloudflare 權限。做法：Cloudflare 後台 → R2 → bucket `celebrate-deal-staging` → Settings → CORS Policy → Add CORS policy（若已有規則，把 Origin 加進既有規則即可），貼上：
+
+  ```json
+  [
+    {
+      "AllowedOrigins": ["https://celebrate-deal-staging.carry-digital-nomad.in.net"],
+      "AllowedMethods": ["PUT"],
+      "AllowedHeaders": ["content-type"],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+  ```
+
+  回報「設了」，主對話會重跑示範場次確認海報與前導影片。正式站更新（D-46）前，正式 bucket 也要對正式網址 `https://celebratedeal.carry-digital-nomad.in.net` 加同樣規則。
+
 ## 待 owner 決定
 
 - **R-10 刪除模式（首次成功 runner 的合成商家）**：首次成功路徑 runner 每次執行會留下一個 `cdfs-` 合成商家。runner workflow 結束後會自動「停用」它（凍結，不刪資料；email job 不再寄提醒信），這部分照常自動執行。停用滿 7 天的商家可由 `staging-first-success-cleanup.yml` 以 `mode=delete` 刪除；依 #543「staging 合成資料封測期間不刪除、要刪先備份並經 owner 同意」的政策，**第一次執行刪除模式前需要 owner 同意，並決定是否先備份**。刪除只認 runner 自己的 Email 與 slug，有訂單、帳務紀錄或多了成員的商家一律跳過；上方 #543 盤點的 4 個商家不受影響。做法與範圍見 `docs/launch/staging-first-success-runner.md`。回報：同意與否、是否先備份。

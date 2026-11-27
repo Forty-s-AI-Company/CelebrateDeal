@@ -138,6 +138,7 @@
 | 9 | ✅ 完成（2026-11-25）：排程 Worker 已重新部署（版本 bf89ac62），會呼叫主動查詢影片狀態 | — | — |
 | 10 | （不急）到 Vercel → `celebrate-deal-staging` → Settings → Environment Variables，確認 `RATE_LIMIT_PROVIDER` 是 `upstash_redis`；若是 `cloudflare_waf` 請改 | Vercel 後台 | 網域不經 Cloudflare，`cloudflare_waf` 等於測試站沒有限流 |
 | 11 | （不急）Cloudflare Stream 的「影片處理完成」通知網址目前沒送到測試站；一個帳號只能設一個，要不要指向測試站或正式站，等正式站要用影片時再決定。已有主動查詢備援，不影響使用 | Cloudflare 後台 | 影片最慢約 5 分鐘才變成可播放 |
+| 12 | **（11-28 新增）** Cloudflare 的測試站圖片儲存（R2）沒有允許測試站網址上傳，所以目前在測試站上傳圖片（直播海報、商品圖等）都會失敗。請到 Cloudflare 後台 → R2 → `celebrate-deal-staging` → Settings → CORS Policy，貼上 OWNER-ACTIONS 的 O-26 那段設定，回「設了」 | Cloudflare 後台 | 測試站無法上傳圖片，示範場次也沒有海報背景 |
 
 ### C. 正式上線前（現在封測用 staging，不急）
 
