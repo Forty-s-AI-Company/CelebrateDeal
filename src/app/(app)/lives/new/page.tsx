@@ -11,6 +11,7 @@ import { getDb } from "@/lib/db";
 import { LiveStudioDraftPayloadSchema, parseStoredLiveStudioDraft } from "@/lib/live-studio-draft";
 import { liveStudioStepAt, liveStudioStepSummary } from "@/lib/live-studio-steps";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
+import { toLiveVideoOption } from "@/lib/live-waiting-video";
 import {
   hasUsableMessageTemplateContent,
   LIVE_REMINDER_EMAIL_TEMPLATE_WHERE,
@@ -63,11 +64,12 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   const requestedDraftId = typeof draft === "string" && /^[a-z0-9_-]{1,128}$/iu.test(draft) ? draft : "";
   const db = getDb();
   const draftLookupAt = new Date();
-  const videos = await db.video.findMany({
+  // The URL stays on the server: the studio only learns whether a self-reported URL is refused (not a direct file, or on Stream).
+  const videos = (await db.video.findMany({
     where: liveReadyVideoWhere(vendor.id),
-    select: { id: true, title: true, sourceType: true, durationSec: true },
+    select: { id: true, title: true, sourceType: true, durationSec: true, videoUrl: true },
     orderBy: { createdAt: "desc" },
-  });
+  })).map(toLiveVideoOption);
   const products = await db.product.findMany({
     where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true },
     select: { id: true, name: true, inventory: true },

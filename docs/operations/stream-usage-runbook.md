@@ -10,7 +10,7 @@
 
 - 原因：帳本 `create` 的巢狀 `allocations.create` 帶了 `vendorId`，Prisma 在執行期拒絕；這個錯誤從 #136（2026-08-30）起就存在。單元測試用 mock，所以沒有發現。
 - 影響：瀏覽器把 500 當成可重試，重試 3 次後暫停送出，播放照常進行。結果 `StreamUsageLedgerEntry` 與 `StreamUsageAllocationEntry` 實際上是空的，商家的串流額度**從未被執行**，`StreamUsageReconciliation` 也無法與 Cloudflare 對上。
-- 本 PR 部署後：心跳會第一次真正入帳，額度會第一次真正生效。`streamMinutesLimit` 設得偏低的商家，觀眾可能在直播中收到 429，播放被暫停並顯示「直播播放額度已用完」。
+- 本 PR 部署後：心跳會第一次真正入帳，額度會第一次真正生效。`streamMinutesLimit` 設得偏低的商家，觀眾可能在直播中收到 429，播放被暫停並顯示「直播已暫停播放」（2026-11-27 前的版本顯示「直播播放額度已用完」）。
 
 部署前 owner 待辦：
 

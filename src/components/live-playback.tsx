@@ -561,8 +561,8 @@ function LiveAdmissionOverlay({ status }: { status: LiveAdmissionStatus }) {
   return (
     <div role="status" className="absolute inset-0 z-50 grid place-items-center bg-slate-950/85 p-6 text-center">
       <div className="max-w-xs rounded-2xl border border-white/15 bg-black/45 p-5 backdrop-blur-md">
-        <p className="text-base font-black">{status === "checking" ? "正在進入直播間…" : "直播容量目前暫停服務"}</p>
-        <p className="mt-2 text-sm text-white/75">請稍後再試；目前不會建立播放、報名或購買來源。</p>
+        <p className="text-base font-black">{status === "checking" ? "正在進入直播間…" : "直播暫時無法播放"}</p>
+        <p className="mt-2 text-sm text-white/75">{status === "checking" ? "請稍候，馬上就好。" : "請稍後再回來，或重新整理頁面。"}</p>
       </div>
     </div>
   );
@@ -576,8 +576,8 @@ function StreamQuotaAlert() {
       aria-live="assertive"
       className="pointer-events-none absolute left-4 right-4 top-20 z-40 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-slate-950 shadow-2xl"
     >
-      <p className="font-black">直播播放額度已用完</p>
-      <p className="mt-1 text-sm leading-6 text-slate-700">播放已暫停。請聯絡主辦人調整直播額度，完成後再重新整理頁面。</p>
+      <p className="font-black">直播已暫停播放</p>
+      <p className="mt-1 text-sm leading-6 text-slate-700">請聯絡主辦單位，或稍後重新整理頁面。</p>
     </div>
   );
 }
@@ -1490,7 +1490,7 @@ function LivePlaybackExperience({
           {liveControls ?? (canControlPlayback ? <PlaybackToggleButton videoRef={playbackVideoRef} isPaused={isPlaybackPaused} /> : null)}
           <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur-md">{secondsLabel(currentSeconds)}</span>
           {live.accentCopy ? <span className="rounded-full bg-orange-700/95 px-3 py-1 text-xs font-bold shadow-lg shadow-orange-950/30">{live.accentCopy}</span> : null}
-          {referralCode ? <span className="rounded-full bg-blue-500/90 px-3 py-1 text-xs font-bold">來源 {referralCode}</span> : null}
+          {referralCode ? <span className="rounded-full bg-blue-500/90 px-3 py-1 text-xs font-bold">推薦碼 {referralCode}</span> : null}
         </div>
         {consultationEvent ? (
           <button type="button" onClick={() => onPanelChange("form")} aria-controls={visiblePanel === "form" ? "live-playback-panel" : undefined}

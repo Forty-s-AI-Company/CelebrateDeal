@@ -11,7 +11,7 @@ import { LiveStudioDraftPayloadSchema, parseStoredLiveStudioDraft, type LiveStud
 import { LIVE_STUDIO_FIRST_STEP_INDEX, liveStudioStepSummary } from "@/lib/live-studio-steps";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
-import { isWaitingVideoOption } from "@/lib/live-waiting-video";
+import { isWaitingVideoOption, toLiveVideoOption } from "@/lib/live-waiting-video";
 import { formatZonedDateTimeLocal } from "@/lib/zoned-date-time";
 import { fixedSessionDraftRows } from "@/lib/live-fixed-sessions";
 import {
@@ -151,7 +151,7 @@ function prepareLiveEditorResources(input: {
  */
 function prepareWaitingVideoForEditor(
   live: { waitingVideoId: string | null; videoId: string | null },
-  videos: Array<{ id: string; sourceType: string; durationSec: number }>,
+  videos: Array<{ id: string; sourceType: string; durationSec: number; selfReportedUrlRefused: boolean }>,
 ): { unavailable: boolean; payloadFields: { waitingVideoId?: string } } {
   const waitingVideoId = live.waitingVideoId;
   if (!waitingVideoId) return { unavailable: false, payloadFields: {} };
@@ -227,7 +227,7 @@ export default async function EditLivePage({
   const { id } = await params;
   const { error, field: invalidField, notice } = await searchParams;
   const db = getDb();
-  const [live, videos, products, formCandidates, templateCandidates, scripts, affiliates, streamMemberships, streamQuotaPages, csrfToken, savedDraft] = await Promise.all([
+  const [live, videoRows, products, formCandidates, templateCandidates, scripts, affiliates, streamMemberships, streamQuotaPages, csrfToken, savedDraft] = await Promise.all([
     db.live.findFirst({
       where: { id, vendorId: vendor.id, ...resourceScope.liveAndForm },
       include: {
@@ -240,7 +240,7 @@ export default async function EditLivePage({
     }),
     db.video.findMany({
       where: liveReadyVideoWhere(vendor.id),
-      select: { id: true, title: true, sourceType: true, durationSec: true },
+      select: { id: true, title: true, sourceType: true, durationSec: true, videoUrl: true },
       orderBy: { createdAt: "desc" },
     }),
     db.product.findMany({
@@ -302,6 +302,8 @@ export default async function EditLivePage({
     }),
   ]);
   if (!live) notFound();
+  // The URL stays on the server: the studio only learns whether a self-reported URL is refused (not a direct file, or on Stream).
+  const videos = videoRows.map(toLiveVideoOption);
 
   // Keep the edit surface tolerant while a shared worktree's generated Prisma
   // client catches up with the accompanying schema migration.

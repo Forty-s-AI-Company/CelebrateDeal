@@ -1726,10 +1726,10 @@ test("desktop merchant can recover upload and validation errors, then publish an
       }
     });
 
-    const quotaAlert = page.getByRole("alert").filter({ hasText: "直播播放額度已用完" });
+    const quotaAlert = page.getByRole("alert").filter({ hasText: "直播已暫停播放" });
     await expect(quotaAlert).toBeVisible();
-    await expect(quotaAlert).toContainText("播放已暫停");
-    await expect(quotaAlert).toContainText("請聯絡主辦人調整直播額度");
+    await expect(quotaAlert).toContainText("稍後重新整理頁面");
+    await expect(quotaAlert).toContainText("請聯絡主辦單位");
     await expect(video).toHaveCount(0);
     expect(await page.evaluate(() => (window as typeof window & { __quotaPauseCalls?: number }).__quotaPauseCalls)).toBe(1);
     expect(heartbeatRequests).toBe(1);
@@ -1970,7 +1970,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect(new Set(heartbeatPayloads.map((payload) => payload.eventId)).size).toBe(1);
     expect(heartbeatPayloads.every((payload) => payload.watchSeconds === 60)).toBe(true);
     expect(await video.evaluate((element) => (element as HTMLVideoElement & { __retryPauseCalls?: number }).__retryPauseCalls)).toBe(0);
-    await expect(page.getByRole("alert").filter({ hasText: "直播播放額度已用完" })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: "直播已暫停播放" })).toHaveCount(0);
     await expect(video).toHaveJSProperty("controls", false); // live window: no seek bar or native play button
     await expectNoBlockingAxeViolations(page);
     await captureIfRequested(page, "stream-retry-desktop.png");

@@ -379,7 +379,7 @@ function ActiveLiveAdvancedInteractions({
     </>);
   }
 
-  if (admissionLost) return <aside role="alert">入場驗證已失效。<button type="button" onClick={() => window.location.reload()}>重新驗證入場</button></aside>;
+  if (admissionLost) return <aside role="alert">連線已中斷，請重新進入直播後再參加互動。<button type="button" onClick={() => window.location.reload()}>重新進入直播</button></aside>;
 
   return (
     <>

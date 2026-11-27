@@ -386,6 +386,7 @@ describe("PublicLivePage", () => {
       cloudflareReadyToStream: true,
       cloudflareLiveInputUid: null,
       liveInputStatus: null,
+      videoUrl: "https://videodelivery.net/a1b2c3d4e5f60718293a4b5c6d7e8f90/manifest/video.m3u8",
     };
     const waitingRender = async (waitingVideo: unknown, state = "waiting", overrides: Record<string, unknown> = {}) => {
       mocks.resolveLiveRuntime.mockReturnValue({ state, playbackStartSeconds: null });
@@ -394,10 +395,10 @@ describe("PublicLivePage", () => {
       return element.props.live as Record<string, unknown>;
     };
 
-    it("loads only the waiting video's readiness fields, never its URL or provider ids", async () => {
+    it("loads only the waiting video's readiness fields and its URL (for the Stream check), never its provider ids", async () => {
       await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
       expect(mocks.findFirst.mock.calls[0]![0].include.waitingVideo).toEqual({
-        select: { vendorId: true, sourceType: true, status: true, durationSec: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true },
+        select: { vendorId: true, sourceType: true, status: true, durationSec: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true, videoUrl: true },
       });
     });
 
@@ -407,6 +408,8 @@ describe("PublicLivePage", () => {
       expect(props.heroImageUrl).toBe("https://img.example.test/poster.jpg");
       const serialized = JSON.stringify(props);
       expect(serialized).not.toContain("loop-1");
+      // The URL is read on the server only for the Stream check; the page never passes it on.
+      expect(serialized).not.toContain("videodelivery.net");
       expect(props).not.toHaveProperty("waitingVideoId");
       expect(props).not.toHaveProperty("waitingVideo");
     });
@@ -422,6 +425,13 @@ describe("PublicLivePage", () => {
       expect(await waitingRender({ ...loop, durationSec: 301 })).not.toHaveProperty("hasWaitingVideo");
       expect(await waitingRender({ ...loop, durationSec: 0 })).not.toHaveProperty("hasWaitingVideo");
       expect(await waitingRender(loop, "waiting", { videoId: "loop-1" })).not.toHaveProperty("hasWaitingVideo");
+      // Review m-A: a merchant-entered URL pointing at Cloudflare Stream; its length is only self-reported.
+      expect(await waitingRender({ ...loop, sourceType: "url", cloudflareReadyToStream: false })).not.toHaveProperty("hasWaitingVideo");
+      expect(await waitingRender({ ...loop, sourceType: "url", cloudflareReadyToStream: false, videoUrl: "https://video.example.test/loop.mp4" }))
+        .toHaveProperty("hasWaitingVideo", true);
+      // #736 m-1: a self-reported URL must be a direct video file, not a manifest.
+      expect(await waitingRender({ ...loop, sourceType: "url", cloudflareReadyToStream: false, videoUrl: "https://video.example.test/loop.m3u8" }))
+        .not.toHaveProperty("hasWaitingVideo");
     });
   });
 

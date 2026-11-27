@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import type { Affiliate, InteractionScript, MessageTemplate, Product, RegistrationForm, Video } from "@prisma/client";
 import {
@@ -63,7 +63,7 @@ import {
   type LiveStudioDraftEnvelope,
   type LiveStudioDraftPayload,
 } from "@/lib/live-studio-draft";
-import { isWaitingVideoOption } from "@/lib/live-waiting-video";
+import { isWaitingVideoOption, type WaitingVideoOptionFields } from "@/lib/live-waiting-video";
 import {
   isLiveStudioStepKey,
   LIVE_STUDIO_STEPS,
@@ -120,11 +120,12 @@ type LiveResourceDrawer =
   | { kind: "template"; trigger: LiveQuickTemplateTrigger; ruleTrigger?: LiveNotificationRuleTrigger };
 
 /**
- * `sourceType` and `durationSec` come from the server list; an option created in
- * the studio's drawer has neither, so it is not offered as a waiting video until
- * the page reloads with its length known.
+ * `sourceType`, `durationSec` and `selfReportedUrlRefused` come from the server
+ * list (toLiveVideoOption); an option created in the studio's drawer has none,
+ * so it is not offered as a waiting video until the page reloads with its
+ * length known.
  */
-type LiveVideoOption = Pick<Video, "id" | "title"> & { sourceType?: string; durationSec?: number | null };
+type LiveVideoOption = Pick<Video, "id" | "title"> & WaitingVideoOptionFields;
 type LiveProductOption = Pick<Product, "id" | "name" | "inventory">;
 type LiveFormOption = Pick<RegistrationForm, "id" | "name">;
 type LiveTemplateOption = Pick<MessageTemplate, "id" | "name" | "channel" | "trigger">;
@@ -1023,6 +1024,51 @@ function waitingVideoOptions(videos: LiveVideoOption[], mainVideoId: string) {
   return videos.filter((video) => video.id !== mainVideoId && isWaitingVideoOption(video));
 }
 
+const WAITING_VIDEO_CLEARED_NOTICE = "等候影片不能和主影片相同，已改為不使用";
+
+/**
+ * 開播前等候影片 select. Choosing the current waiting video as the main video
+ * takes it out of the options; the choice falls back to 不使用 and a notice
+ * says so instead of clearing it silently. The draft serializes the DOM value.
+ */
+function LiveWaitingVideoField({ videos, selectedVideoId, initialWaitingVideoId }: {
+  videos: LiveVideoOption[];
+  selectedVideoId: string;
+  initialWaitingVideoId: string;
+}) {
+  const [waitingVideoId, setWaitingVideoId] = useState(initialWaitingVideoId);
+  const [clearedForMainVideo, setClearedForMainVideo] = useState(false);
+  const noticeId = useId();
+  // Adjusted while rendering (no effect), so the cleared value and the notice appear in the same commit.
+  if (waitingVideoId && waitingVideoId === selectedVideoId) {
+    setWaitingVideoId("");
+    setClearedForMainVideo(true);
+  }
+  return (
+    <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+      開播前等候影片（選填）
+      {/* The server rechecks the vendor, readiness, length and that it is not the main video. */}
+      <select
+        name="waitingVideoId"
+        value={waitingVideoId}
+        aria-describedby={clearedForMainVideo ? noticeId : undefined}
+        onChange={(event) => {
+          setWaitingVideoId(event.target.value);
+          setClearedForMainVideo(false);
+        }}
+        className="h-11 rounded-md border border-border px-3"
+      >
+        <option value="">不使用（開播前只顯示封面）</option>
+        {waitingVideoOptions(videos, selectedVideoId).map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
+      </select>
+      {clearedForMainVideo ? (
+        <span id={noticeId} role="status" data-testid="waiting-video-cleared" className="text-xs font-semibold text-amber-800">{WAITING_VIDEO_CLEARED_NOTICE}</span>
+      ) : null}
+      <span className="text-xs font-normal text-slate-500">需 5 分鐘以內。開播前 1 小時內進入直播間的觀眾，背景會靜音循環播放這支影片，並以直播封面當作預覽圖；開播後自動換成直播內容。只能選已上傳完成、不是直播主影片的影片；貼上網址的影片需是 .mp4、.webm 或 .mov 檔。</span>
+    </label>
+  );
+}
+
 /** 內容: purpose, title, media, registration page and schedule; address, description, replay deadline and cover are advanced. */
 function renderLiveStudioContentStep(input: LiveStudioContentStepOptions) {
   const fixedSessions = input.fixedSessions.mode === "fixed_sessions";
@@ -1055,15 +1101,7 @@ function renderLiveStudioContentStep(input: LiveStudioContentStepOptions) {
             </select>
           </label>
         </div>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          開播前等候影片（選填）
-          {/* Uncontrolled like the other studio selects; the draft serializes the DOM value. The server rechecks the vendor and readiness. */}
-          <select name="waitingVideoId" defaultValue={input.initialValues.waitingVideoId ?? ""} className="h-11 rounded-md border border-border px-3">
-            <option value="">不使用（開播前只顯示封面）</option>
-            {waitingVideoOptions(input.videos, input.selectedVideoId).map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
-          </select>
-          <span className="text-xs font-normal text-slate-500">需 5 分鐘以內。開播前 1 小時內進入直播間的觀眾，背景會靜音循環播放這支影片，並以直播封面當作預覽圖；開播後自動換成直播內容。只能選已上傳完成、不是直播主影片的影片。</span>
-        </label>
+        <LiveWaitingVideoField videos={input.videos} selectedVideoId={input.selectedVideoId} initialWaitingVideoId={input.initialValues.waitingVideoId ?? ""} />
         {input.videos.length === 0 && input.pendingVideos.length === 0 ? <p className="text-sm text-slate-600">目前沒有可播放的影片，可以在這裡直接上傳。</p> : null}
         <LivePendingVideos videos={input.pendingVideos} onReady={input.onPendingVideoReady} onProblem={input.onPendingVideoProblem} />
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

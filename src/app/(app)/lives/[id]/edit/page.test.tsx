@@ -246,16 +246,20 @@ describe("EditLivePage unified Live Studio", () => {
   it("keeps a ready pre-recorded 開播前等候影片 and drops one that can no longer loop", async () => {
     const lastInitialValues = () => (mocks.liveStepperForm.mock.calls.at(-1) as unknown as [{ initialValues: Record<string, unknown> }])[0].initialValues;
     mocks.videoFindMany.mockResolvedValue([
-      { id: "loop-1", title: "等候循環", sourceType: "url", durationSec: 24 },
+      { id: "loop-1", title: "等候循環", sourceType: "url", durationSec: 24, videoUrl: "https://video.example.test/loop.mp4" },
+      // #736 m-1: a self-reported URL that is not a direct video file.
+      { id: "hls-url", title: "自架 HLS", sourceType: "url", durationSec: 24, videoUrl: "https://video.example.test/loop.m3u8" },
       { id: "obs-input", title: "OBS", sourceType: "cloudflare_live", durationSec: 0 },
       { id: "long-1", title: "完整講座", sourceType: "url", durationSec: 3_600 },
+      // A self-reported 60 s whose URL is a Cloudflare Stream manifest of any length (review m-A).
+      { id: "stream-url", title: "Stream 網址", sourceType: "url", durationSec: 60, videoUrl: "https://videodelivery.net/a1b2c3d4e5f60718293a4b5c6d7e8f90/manifest/video.m3u8" },
     ]);
     mocks.liveFindFirst.mockResolvedValue({ ...live, interactionScriptId: null, waitingVideoId: "loop-1" });
     let html = renderToStaticMarkup(await EditLivePage({ params: Promise.resolve({ id: "live-1" }), searchParams: Promise.resolve({}) }));
     expect(html).not.toContain("開播前等候影片已無法播放");
     expect(lastInitialValues()).toMatchObject({ waitingVideoId: "loop-1" });
 
-    for (const [waitingVideoId, videoId] of [["obs-input", null], ["archived-or-foreign", null], ["long-1", null], ["loop-1", "loop-1"]]) {
+    for (const [waitingVideoId, videoId] of [["obs-input", null], ["archived-or-foreign", null], ["long-1", null], ["stream-url", null], ["hls-url", null], ["loop-1", "loop-1"]]) {
       mocks.liveFindFirst.mockResolvedValue({ ...live, interactionScriptId: null, waitingVideoId, videoId });
       html = renderToStaticMarkup(await EditLivePage({ params: Promise.resolve({ id: "live-1" }), searchParams: Promise.resolve({}) }));
       expect(html).toContain("開播前等候影片已無法播放");

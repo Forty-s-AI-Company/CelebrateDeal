@@ -200,6 +200,192 @@ describe("LiveWaitingBackdrop 60-minute window", () => {
   });
 });
 
+describe("LiveWaitingBackdrop rerenders (#736 M-1)", () => {
+  const start = "2026-11-27T10:00:00.000Z";
+  // Past the start of a manually started show: the room still waits and the page refreshes every 2 seconds.
+  const refreshes = (count: number) => Array.from({ length: count }, (_, index) => (
+    new Date(Date.parse(start) + 10 * 60_000 + index * 2_000).toISOString()
+  ));
+
+  it("asks once and never reattaches a served file however often the page refreshes", async () => {
+    let served = 0;
+    fetchMock.mockImplementation(async () => jsonResponse({ playbackUrl: `https://video.example.test/loop.mp4?n=${served++}` }));
+    for (const serverNow of refreshes(5)) await render({ scheduledAt: start, serverNow });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const video = container.querySelector('[data-testid="live-waiting-video"]') as HTMLVideoElement;
+    expect(video.getAttribute("src")).toBe("https://video.example.test/loop.mp4?n=0");
+    // Attached once, never released and reloaded from the start.
+    expect(HTMLMediaElement.prototype.load).not.toHaveBeenCalled();
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+    // The same element keeps playing.
+    await render({ scheduledAt: start, serverNow: refreshes(6)[5] });
+    expect(container.querySelector('[data-testid="live-waiting-video"]')).toBe(video);
+  });
+
+  it("leaves renewal of a signed HLS source to the shared player", async () => {
+    const manifest = "https://customer-abc.cloudflarestream.com/token.a.b/manifest/video.m3u8";
+    fetchMock.mockImplementation(async () => jsonResponse({ playbackUrl: manifest, expiresInSeconds: 600 }));
+    for (const serverNow of refreshes(5)) await render({ scheduledAt: start, serverNow });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(mocks.attachHlsPlayback).toHaveBeenCalledOnce();
+    expect(mocks.detach).not.toHaveBeenCalled();
+  });
+
+  it("does not ask again when only the start changes after the source was served", async () => {
+    await render({ scheduledAt: start, serverNow: refreshes(1)[0] });
+    await render({ scheduledAt: "2026-11-27T10:15:00.000Z", serverNow: refreshes(2)[1] });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-testid="live-waiting-video"]')).not.toBeNull();
+  });
+
+  it("asks afresh for another Live", async () => {
+    await render({ scheduledAt: start, serverNow: refreshes(1)[0] });
+    await render({ liveId: "live-2", scheduledAt: start, serverNow: refreshes(2)[1] });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]![0]).toBe("/api/live-waiting-source?vendorId=vendor-1&liveId=live-2");
+  });
+});
+
+describe("LiveWaitingBackdrop retries (review m-C)", () => {
+  const refused = () => jsonResponse({ error: "Waiting video unavailable" }, 403);
+  const served = () => jsonResponse({ playbackUrl: "https://video.example.test/waiting-loop.mp4" });
+  const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+  const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("asks again after 5 seconds and then after 30 more, and plays once a source arrives", async () => {
+    fetchMock
+      .mockImplementationOnce(async () => refused())
+      .mockImplementationOnce(async () => { throw new Error("offline"); })
+      .mockImplementationOnce(async () => served());
+    await render();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("video")).toBeNull();
+
+    await advance(4_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await flush();
+
+    await advance(29_999);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await advance(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await flush();
+    expect(container.querySelector('[data-testid="live-waiting-video"]')?.getAttribute("src")).toBe("https://video.example.test/waiting-loop.mp4");
+    for (const [url] of fetchMock.mock.calls) expect(url).toBe("/api/live-waiting-source?vendorId=vendor-1&liveId=live-1");
+  });
+
+  it("stops after 3 requests in all and keeps the poster", async () => {
+    fetchMock.mockImplementation(async () => refused());
+    await render();
+    await advance(5_000);
+    await flush();
+    await advance(30_000);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await advance(10 * 60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(container.querySelector("video")).toBeNull();
+    expect((container.querySelector('[data-testid="live-waiting-backdrop"]') as HTMLElement).dataset.waitingVideo).toBe("off");
+  });
+
+  it("does not retry after a source is served", async () => {
+    fetchMock.mockImplementation(async () => served());
+    await render();
+    await advance(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the retry count across rerenders: at most 3 requests in all (#736 M-1)", async () => {
+    fetchMock.mockImplementation(async () => refused());
+    const start = "2026-11-27T10:00:00.000Z";
+    vi.setSystemTime(new Date(Date.parse(start) + 10 * 60_000));
+    // The watch page refreshes every 2 seconds once the start has passed; each render brings a new serverNow.
+    for (let second = 0; second < 60; second += 2) {
+      const serverNow = new Date(Date.parse(start) + 10 * 60_000 + second * 1_000).toISOString();
+      await render({ scheduledAt: start, serverNow });
+      await advance(2_000);
+      await flush();
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(container.querySelector("video")).toBeNull();
+  });
+
+  it("starts over for a postponed show after giving up at the old start (#736 re-review m-1)", async () => {
+    const oldStart = Date.parse("2026-11-27T12:00:00.000Z");
+    const newStart = oldStart + 90 * 60_000;
+    // The server already knows the new start: it serves only from 60 minutes before it.
+    fetchMock.mockImplementation(async () => (Date.now() >= newStart - 60 * 60_000 ? served() : refused()));
+    const iso = (ms: number) => new Date(ms).toISOString();
+    // This page was rendered before the postponement: it plans for the old start.
+    vi.setSystemTime(oldStart - 50 * 60_000);
+    await render({ scheduledAt: iso(oldStart), serverNow: iso(Date.now()) });
+    await advance(60_000);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    // Refreshes that only bring a new serverNow keep the given-up state.
+    await render({ scheduledAt: iso(oldStart), serverNow: iso(Date.now()) });
+    await advance(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    // At the old start the countdown refreshes the page, which now brings the new start.
+    await advance(oldStart - Date.now());
+    await render({ scheduledAt: iso(newStart), serverNow: iso(Date.now()) });
+    // The new window opens 30 minutes later; nothing is asked before it.
+    await advance(29 * 60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await advance(2 * 60_000);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(container.querySelector('[data-testid="live-waiting-video"]')?.getAttribute("src")).toBe("https://video.example.test/waiting-loop.mp4");
+
+    // Served: later refreshes, even with another start, never ask again.
+    await render({ scheduledAt: iso(newStart + 60_000), serverNow: iso(Date.now()) });
+    await advance(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("starts over when the start changes while still retrying", async () => {
+    const start = Date.parse("2026-11-27T10:00:00.000Z");
+    const iso = (ms: number) => new Date(ms).toISOString();
+    fetchMock.mockImplementation(async () => refused());
+    vi.setSystemTime(start - 10 * 60_000);
+    await render({ scheduledAt: iso(start), serverNow: iso(Date.now()) });
+    await advance(5_000);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // A new start inside the window: asked at once, with a fresh budget of 3.
+    await render({ scheduledAt: iso(start + 15 * 60_000), serverNow: iso(Date.now()) });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await advance(5_000);
+    await flush();
+    await advance(30_000);
+    await flush();
+    await advance(10 * 60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
+  it("clears a pending retry when the room closes", async () => {
+    fetchMock.mockImplementation(async () => refused());
+    await render();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => root.render(<div data-testid="main-player" />));
+    await advance(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("waiting source projection", () => {
   it("accepts only a safe http(s) URL and a positive lifetime", () => {
     expect(projectWaitingVideoSource({ playbackUrl: "https://v.example.test/a.mp4" })).toEqual({ playbackUrl: "https://v.example.test/a.mp4" });

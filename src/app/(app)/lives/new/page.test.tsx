@@ -187,13 +187,26 @@ describe("NewLivePage data minimization", () => {
   });
 
   it("only serializes the video identifier, title, source type and length into the client form", async () => {
+    mocks.videoFindMany.mockResolvedValueOnce([
+      { id: "loop-1", title: "等候", sourceType: "url", durationSec: 60, videoUrl: "https://video.example.test/loop.mp4" },
+      { id: "loop-stream", title: "Stream 網址", sourceType: "url", durationSec: 60, videoUrl: "https://videodelivery.net/a1b2c3d4e5f60718293a4b5c6d7e8f90/manifest/video.m3u8" },
+      { id: "loop-hls", title: "自架 HLS", sourceType: "url", durationSec: 60, videoUrl: "https://video.example.test/loop.m3u8" },
+    ]);
     renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({}) }));
 
     expect(mocks.videoFindMany).toHaveBeenCalledExactlyOnceWith({
       where: liveReadyVideoWhere("vendor-1"),
-      select: { id: true, title: true, sourceType: true, durationSec: true },
+      select: { id: true, title: true, sourceType: true, durationSec: true, videoUrl: true },
       orderBy: { createdAt: "desc" },
     });
+    // The URL is read only to flag a self-reported Stream URL (review m-A); it never reaches the client form.
+    const formProps = (mocks.liveStepperForm.mock.calls.at(-1) as unknown as [{ videos: unknown[] }])[0];
+    expect(formProps.videos).toEqual([
+      { id: "loop-1", title: "等候", sourceType: "url", durationSec: 60, selfReportedUrlRefused: false },
+      { id: "loop-stream", title: "Stream 網址", sourceType: "url", durationSec: 60, selfReportedUrlRefused: true },
+      { id: "loop-hls", title: "自架 HLS", sourceType: "url", durationSec: 60, selfReportedUrlRefused: true },
+    ]);
+    expect(JSON.stringify(formProps.videos)).not.toContain("videoUrl");
     expect(mocks.messageTemplateFindMany).toHaveBeenCalledExactlyOnceWith({
       where: {
         vendorId: "vendor-1",
