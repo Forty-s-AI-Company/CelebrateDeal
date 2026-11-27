@@ -11,6 +11,7 @@ import {
   describeErrorSample, formatRenewalErrorsLine, streamSegmentIdentity, summarizeStreamErrors,
   formatManualLine, parseManualHours, parseManualMode, parseManualStartsAt, manualLiveSchedule, videoFixtureFor,
   POSTER_FIXTURE, WAITING_LOOP_FIXTURE, MANUAL_STARTS_AT_MIN_LEAD_MINUTES,
+  countBlockedRoute, describeRequestClass, statusClass, BLOCKED_ROUTE_KEY_LIMIT,
   validUploadUrl, withCorruptedSignature, assessNewTokenUse, createTokenAttribution, playlistReferences, shouldRefuseInRecovery,
 } from "./staging-stream-playback-browser-core.mjs";
 import { describeFailure, probeAllowedOrigins, RECOVERY_CASES, runStreamPlaybackBrowser, safeReceiptText } from "./staging-stream-playback-browser.mjs";
@@ -436,7 +437,7 @@ test("receipt lines are single-line key=value records with fixed vocabulary", ()
   receipt.benignPageErrors = 1;
   receipt.pageErrorDetails.push({ actor: "viewer", phase: "RECOVERY", benign: true, ...describePageError({ name: "AbortError", message: "The play() request was interrupted by a new load request.", stack: "" }) });
   const lines = formatReceiptLines(receipt).split("\n");
-  assert.equal(lines.length, 11);
+  assert.equal(lines.length, 12);
   assert.ok(lines.includes("stream_playback_renewal_errors=NOT_RUN"));
   assert.ok(lines.some((line) => line.startsWith("stream_playback_requests=app_uid:0 provider_uid:0 provider_failures:0 VIEWER_START/PROVIDER/UID/SEGMENT/xhr:videodelivery:/<uid>/video/<n>/seg_<n>.ts?keys=p:1(ok:0,failed:0,aborted:0,injected:0)")));
   assert.ok(lines.includes("stream_playback_errors=page:1 benign:1 viewer/RECOVERY/MEDIA_PLAY_INTERRUPTED/AbortError@NONE(benign)"));
@@ -1067,4 +1068,48 @@ test("request policy: the owner may PUT the poster only to the staging R2 bucket
     assert.equal(classifyRequest(req(`${ORIGIN}${path}`, "POST"), "owner"), "WRITE", path);
     assert.equal(classifyRequest(req(`${ORIGIN}${path}`, "POST"), "viewer"), "BLOCK", path);
   }
+});
+
+test("diagnostics: a blocked poster request is reported by fixed route and host class, never by URL", () => {
+  const acct = "a".repeat(32);
+  const signed = (host) => `https://${host}/images/01234567-89ab-cdef-0123-456789abcdef.jpg?X-Amz-Signature=${"b".repeat(64)}`;
+  const staging = signed(`celebrate-deal-staging.${acct}.r2.cloudflarestorage.com`);
+  const production = signed(`celebrate-deal-production.${acct}.r2.cloudflarestorage.com`);
+  assert.deepEqual(describeRequestClass({ url: staging, method: "PUT" }), { routeClass: "R2_PUT", hostClass: "R2_STAGING" });
+  assert.deepEqual(describeRequestClass({ url: staging, method: "OPTIONS" }), { routeClass: "R2_PREFLIGHT", hostClass: "R2_STAGING" });
+  assert.deepEqual(describeRequestClass({ url: production, method: "PUT" }), { routeClass: "R2_PUT", hostClass: "R2_OTHER_BUCKET" });
+  assert.deepEqual(describeRequestClass({ url: `https://pub-abc123.r2.dev/images/x.jpg`, method: "GET" }), { routeClass: "PUBLIC_IMAGE_READ", hostClass: "R2_PUBLIC_DEV" });
+  assert.deepEqual(describeRequestClass({ url: `${ORIGIN}/api/media/images/presign`, method: "POST" }), { routeClass: "POSTER_PRESIGN", hostClass: "APP" });
+  assert.deepEqual(describeRequestClass({ url: `${ORIGIN}/api/media/images/complete`, method: "POST" }), { routeClass: "POSTER_COMPLETE", hostClass: "APP" });
+  assert.deepEqual(describeRequestClass({ url: "https://example.invalid/x", method: "GET" }), { routeClass: "OTHER", hostClass: "OTHER" });
+  assert.deepEqual(describeRequestClass({ url: "not a url", method: "GET" }), { routeClass: "OTHER", hostClass: "OTHER" });
+  // The production bucket is refused by the policy for the owner as well, and is told apart in the receipt.
+  assert.equal(classifyRequest({ url: production, method: "PUT", postData: null }, "owner"), "EXTERNAL");
+
+  const receipt = createReceipt({ ...env, CELEBRATEDEAL_STREAM_VIEWER_BROWSER: "chromium", CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: "manual" });
+  countBlockedRoute(receipt, "EXTERNAL", { url: production, method: "PUT" });
+  countBlockedRoute(receipt, "EXTERNAL", { url: production, method: "PUT" });
+  countBlockedRoute(receipt, "BLOCK", { url: `${ORIGIN}/api/media/images/presign`, method: "POST" });
+  assert.deepEqual(receipt.blockedByRoute, { "EXTERNAL|R2_PUT|R2_OTHER_BUCKET": 2, "BLOCK|POSTER_PRESIGN|APP": 1 });
+  const lines = formatReceiptLines(receipt);
+  assert.match(lines, /stream_playback_blocked=writes:0 external:0 EXTERNAL\|R2_PUT\|R2_OTHER_BUCKET:2 BLOCK\|POSTER_PRESIGN\|APP:1/u);
+  assert.match(lines, /stream_playback_poster_upload=presign:NOT_SEEN preflight:NOT_SEEN put:NOT_SEEN complete:NOT_SEEN alert:NOT_CHECKED file_selected:NOT_CHECKED/u);
+  assert.equal(receiptLeaks(lines), false);
+  assert.equal(receiptLeaks(JSON.stringify(receipt)), false);
+  assert.equal(lines.includes("r2.cloudflarestorage"), false);
+  assert.equal(lines.includes("X-Amz"), false);
+});
+
+test("diagnostics: the blocked-route counter is bounded and status classes are fixed", () => {
+  const receipt = createReceipt({ ...env, CELEBRATEDEAL_STREAM_VIEWER_BROWSER: "chromium", CELEBRATEDEAL_STREAM_PLAYBACK_SCENARIO: "manual" });
+  for (let index = 0; index < BLOCKED_ROUTE_KEY_LIMIT + 5; index += 1) {
+    const kind = index % 2 ? "BLOCK" : "EXTERNAL";
+    const method = ["PUT", "OPTIONS", "GET", "POST", "DELETE", "PATCH"][index % 6];
+    const host = ["example.invalid", ALIAS, `b.${"a".repeat(32)}.r2.cloudflarestorage.com`, "pub-x.r2.dev"][index % 4];
+    countBlockedRoute(receipt, kind, { url: `https://${host}/p${index}`, method });
+  }
+  assert.ok(Object.keys(receipt.blockedByRoute).length <= BLOCKED_ROUTE_KEY_LIMIT + 1);
+  assert.deepEqual([200, 204, 403, 404, 503].map(statusClass), ["2XX", "2XX", "4XX", "4XX", "5XX"]);
+  assert.equal(statusClass(0), "FAILED");
+  assert.equal(statusClass(undefined), "FAILED");
 });

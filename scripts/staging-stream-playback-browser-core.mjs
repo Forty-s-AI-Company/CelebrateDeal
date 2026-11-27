@@ -664,6 +664,54 @@ export function classifyRequest({ url, method, postData = null }, actor) {
   return "BLOCK";
 }
 
+/**
+ * Fixed diagnostic classes for a request the policy did not pass through: a route class (what the
+ * request was for) and a host class (where it went). Never the URL, path, query, id or signature.
+ */
+export const REQUEST_ROUTE_CLASSES = Object.freeze([
+  "POSTER_PRESIGN", "POSTER_COMPLETE", "R2_PUT", "R2_PREFLIGHT", "R2_OTHER", "PUBLIC_IMAGE_READ", "APP_OTHER", "OTHER",
+]);
+export const REQUEST_HOST_CLASSES = Object.freeze(["APP", "R2_STAGING", "R2_OTHER_BUCKET", "R2_PUBLIC_DEV", "STREAM", "OTHER"]);
+export function describeRequestClass({ url, method }) {
+  let parsed;
+  try { parsed = new URL(url); } catch { return { routeClass: "OTHER", hostClass: "OTHER" }; }
+  const upper = String(method).toUpperCase();
+  const host = parsed.hostname;
+  if (host === ALIAS) {
+    if (upper === "POST" && parsed.pathname === "/api/media/images/presign") return { routeClass: "POSTER_PRESIGN", hostClass: "APP" };
+    if (upper === "POST" && parsed.pathname === "/api/media/images/complete") return { routeClass: "POSTER_COMPLETE", hostClass: "APP" };
+    return { routeClass: "APP_OTHER", hostClass: "APP" };
+  }
+  if (host.endsWith(".r2.cloudflarestorage.com")) {
+    const hostClass = R2_STAGING_UPLOAD_HOST.test(host) ? "R2_STAGING" : "R2_OTHER_BUCKET";
+    if (upper === "PUT") return { routeClass: "R2_PUT", hostClass };
+    if (upper === "OPTIONS") return { routeClass: "R2_PREFLIGHT", hostClass };
+    return { routeClass: "R2_OTHER", hostClass };
+  }
+  if (/^pub-[a-z0-9-]+\.r2\.dev$/u.test(host)) return { routeClass: "PUBLIC_IMAGE_READ", hostClass: "R2_PUBLIC_DEV" };
+  return { routeClass: "OTHER", hostClass: isStreamDeliveryHost(host) ? "STREAM" : "OTHER" };
+}
+
+/** Bounded counter of what the policy blocked: `KIND|ROUTE|HOST` keys from fixed enums only. */
+export const BLOCKED_ROUTE_KEY_LIMIT = 16;
+export function countBlockedRoute(receipt, kind, request) {
+  const { routeClass, hostClass } = describeRequestClass(request);
+  const key = `${kind}|${routeClass}|${hostClass}`;
+  const counts = receipt.blockedByRoute;
+  if (key in counts) counts[key] += 1;
+  else if (Object.keys(counts).length < BLOCKED_ROUTE_KEY_LIMIT) counts[key] = 1;
+  else counts["OVERFLOW"] = (counts["OVERFLOW"] ?? 0) + 1;
+  return { routeClass, hostClass };
+}
+
+/** Poster upload stages the receipt reports, each as NOT_SEEN, BLOCKED_BY_POLICY, FAILED or an HTTP status class. */
+export const POSTER_UPLOAD_STAGE_BY_ROUTE = Object.freeze({
+  POSTER_PRESIGN: "presign", R2_PREFLIGHT: "preflight", R2_PUT: "put", POSTER_COMPLETE: "complete",
+});
+export function statusClass(status) {
+  return Number.isInteger(status) && status >= 200 && status < 600 ? `${Math.floor(status / 100)}XX` : "FAILED";
+}
+
 /** Upload capability returned by the owner API: Cloudflare's upload host and a 32-hex path only. */
 export function validUploadUrl(value) {
   try {
@@ -735,6 +783,8 @@ export function createReceipt(env = {}) {
       // Manual only: the waiting-room poster and loop bound to the Live (owner 2026-11-27).
       posterUploaded: false, waitingVideoReused: false, waitingVideoUploaded: false, waitingVideoBound: false,
     },
+    // Manual only: what the poster upload's four requests did, and what the field showed (fixed enums).
+    posterUpload: { presign: "NOT_SEEN", preflight: "NOT_SEEN", put: "NOT_SEEN", complete: "NOT_SEEN", alert: "NOT_CHECKED", fileSelected: "NOT_CHECKED" },
     viewer: {
       admissionOk: false, playbackSourceResponses: 0, tokenFormPlayback: false, uidFormStreamRequests: 0,
       tokenFormStreamRequests: 0, appUidFormStreamRequests: 0, providerUidFormStreamRequests: 0,
@@ -755,7 +805,7 @@ export function createReceipt(env = {}) {
       // unsigned uid manifest is refused (ORIGIN_PROBE videoLock LOCKED, plan §8 step 4).
       postLockPlayback: "NOT_COVERED", postLockReason: "VIDEO_LOCK_STATE_NOT_OBSERVED",
     },
-    pageErrors: 0, benignPageErrors: 0, pageErrorDetails: [], blockedWrites: 0, blockedExternal: 0, suppressedTelemetry: 0, suppressedAnalytics: 0,
+    pageErrors: 0, benignPageErrors: 0, pageErrorDetails: [], blockedWrites: 0, blockedExternal: 0, blockedByRoute: {}, suppressedTelemetry: 0, suppressedAnalytics: 0,
     sideEffects: {
       ownerSessionsIssued: 0, ownerSessionsRevoked: 0, videoUploads: 0, formCreates: 0, templateCreates: 0,
       scriptCreates: 0, liveCreates: 0, videoSaves: 0, paymentSubmissions: 0, formSubmissions: 0, emails: 0,
@@ -1025,8 +1075,20 @@ export function formatReceiptLines(receipt) {
     `stream_playback_pages=${receipt.pages.length ? receipt.pages.map((item) => `${item.page}:${item.status}`).join(" ") : "NOT_RUN"}`,
     `stream_playback_coverage=chromium_hlsjs:${receipt.coverage.chromiumHlsJs} safari:${receipt.coverage.safari}(${receipt.coverage.safariReason}) webkit_native_hls:${receipt.coverage.webkitNativeHls} live_renewal:${receipt.coverage.liveRenewal}(${receipt.coverage.liveRenewalReason}) live_preview_player:${receipt.coverage.livePreviewPlayer} post_lock_playback:${receipt.coverage.postLockPlayback}(${receipt.coverage.postLockReason})`,
   ];
-  if (receipt.scenario === "manual") lines.push(formatManualLine(receipt));
+  lines.push(formatBlockedLine(receipt));
+  if (receipt.scenario === "manual") lines.push(formatPosterUploadLine(receipt), formatManualLine(receipt));
   return lines.join("\n");
+}
+
+/** What the request policy refused, by fixed route/host class (counts only, never a URL). */
+function formatBlockedLine(receipt) {
+  const routes = Object.entries(receipt.blockedByRoute ?? {}).map(([key, count]) => `${key}:${count}`).join(" ") || "NONE";
+  return `stream_playback_blocked=writes:${receipt.blockedWrites} external:${receipt.blockedExternal} ${routes}`;
+}
+
+function formatPosterUploadLine(receipt) {
+  const upload = receipt.posterUpload ?? {};
+  return `stream_playback_poster_upload=presign:${upload.presign} preflight:${upload.preflight} put:${upload.put} complete:${upload.complete} alert:${upload.alert} file_selected:${upload.fileSelected}`;
 }
 
 /** Fixed route classes for the failure page; never the URL, id or slug. */

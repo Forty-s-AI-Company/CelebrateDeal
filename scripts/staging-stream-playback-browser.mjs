@@ -11,6 +11,7 @@ import {
   finalVerdict, formatReceiptLines, isStreamDeliveryHost, receiptLeaks, renewalDelaySeconds,
   replayDeadline, replayDeadlineMinutes, routeCategory, safariCoverage, setStep, shouldRefuseInRecovery, skippedStepsFor,
   PAGE_ERROR_DETAIL_LIMIT, classifyRequestFailure, classifyVideoLock, postLockCoverage, describePageError, isBenignPageError, streamTokenSubject,
+  POSTER_UPLOAD_STAGE_BY_ROUTE, countBlockedRoute, describeRequestClass, statusClass,
   describeErrorSample, streamRequestOrigin, streamSegmentIdentity, summarizeStreamErrors, tallyStreamRequest, taipeiDateTimeLocal, validUploadUrl, withCorruptedSignature,
 } from "./staging-stream-playback-browser-core.mjs";
 
@@ -365,6 +366,10 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
     if (kind === "TELEMETRY") { receipt.suppressedTelemetry += 1; return route.fulfill({ status: 204 }); }
     if (kind === "ANALYTICS") { receipt.suppressedAnalytics += 1; return route.fulfill({ status: 204 }); }
     if (kind === "ATTRIBUTION_RESET") return route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
+    // Fixed enums only (route class, host class): which kind of request the policy refused.
+    const blocked = countBlockedRoute(receipt, kind, { url: request.url(), method: request.method() });
+    const blockedStage = POSTER_UPLOAD_STAGE_BY_ROUTE[blocked.routeClass];
+    if (actor === "owner" && blockedStage) receipt.posterUpload[blockedStage] = "BLOCKED_BY_POLICY";
     if (kind === "EXTERNAL") receipt.blockedExternal += 1;
     else if (kind === "PAYMENT") { receipt.sideEffects.paymentSubmissions += 1; receipt.blockedWrites += 1; }
     else receipt.blockedWrites += 1;
@@ -390,6 +395,20 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
       if (receipt.pageErrorDetails.length < PAGE_ERROR_DETAIL_LIMIT) {
         receipt.pageErrorDetails.push({ actor, phase: STEPS.includes(currentStep) ? currentStep : "OTHER", duringNavigation, benign, ...described });
       }
+    });
+    // Poster upload stages (presign, preflight, signed PUT, complete): the outcome class only.
+    const posterStage = (request) => {
+      if (actor !== "owner") return null;
+      const { routeClass, hostClass } = describeRequestClass({ url: request.url(), method: request.method() });
+      return hostClass === "R2_STAGING" || hostClass === "APP" ? POSTER_UPLOAD_STAGE_BY_ROUTE[routeClass] ?? null : null;
+    };
+    page.on("response", (response) => {
+      const stage = posterStage(response.request());
+      if (stage) receipt.posterUpload[stage] = statusClass(response.status());
+    });
+    page.on("requestfailed", (request) => {
+      const stage = posterStage(request);
+      if (stage && receipt.posterUpload[stage] !== "BLOCKED_BY_POLICY") receipt.posterUpload[stage] = "FAILED";
     });
     page.on("dialog", (dialog) => { void dialog.dismiss().catch(() => {}); });
     activePage = page;
@@ -699,7 +718,14 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
           name: POSTER_FIXTURE.uploadFileName, mimeType: "image/jpeg", buffer: posterBytes,
         });
         await advanced.getByRole("button", { name: "開始上傳", exact: true }).click({ timeout: 10_000 });
-        ensure(await visible(advanced.getByText("縮圖上傳完成，儲存表單後即會套用。", { exact: true }), 45_000), "POSTER_UPLOAD");
+        const posterDone = await visible(advanced.getByText("縮圖上傳完成，儲存表單後即會套用。", { exact: true }), 45_000);
+        if (!posterDone) {
+          // What the field showed (fixed enums); the request stages are already in receipt.posterUpload.
+          receipt.posterUpload.alert = await advanced.getByRole("alert").count() > 0 ? "PRESENT" : "ABSENT";
+          receipt.posterUpload.fileSelected = await advanced.getByText(`已選擇：${POSTER_FIXTURE.uploadFileName}`, { exact: false }).count() > 0
+            ? "YES" : "NO";
+        }
+        ensure(posterDone, "POSTER_UPLOAD");
         ensure(/^[A-Za-z0-9_-]{1,128}$/u.test(await owner.locator('input[name="heroImageAssetId"]').inputValue()), "POSTER_ASSET");
         receipt.fixture.posterUploaded = true;
         ensure(await selectOptionByText(owner.locator('select[name="waitingVideoId"]'), WAITING_LOOP_FIXTURE.videoTitle), "LIVE_WAITING_VIDEO_OPTION");
