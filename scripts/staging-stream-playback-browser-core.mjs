@@ -671,40 +671,85 @@ export function classifyRequest({ url, method, postData = null }, actor) {
 export const REQUEST_ROUTE_CLASSES = Object.freeze([
   "POSTER_PRESIGN", "POSTER_COMPLETE", "R2_PUT", "R2_PREFLIGHT", "R2_OTHER", "PUBLIC_IMAGE_READ", "APP_OTHER", "OTHER",
 ]);
-export const REQUEST_HOST_CLASSES = Object.freeze(["APP", "R2_STAGING", "R2_OTHER_BUCKET", "R2_PUBLIC_DEV", "STREAM", "OTHER"]);
-export function describeRequestClass({ url, method }) {
+export const REQUEST_HOST_CLASSES = Object.freeze([
+  "APP", "R2_STAGING", "R2_OTHER_BUCKET", "R2_PUBLIC_DEV", "STREAM", "NON_HTTPS", "GOOGLE", "CLOUDFLARE", "SENTRY", "VERCEL", "OTHER_HTTPS", "OTHER",
+]);
+/** Playwright's own resource types; anything else is OTHER. */
+export const REQUEST_RESOURCE_TYPES = Object.freeze([
+  "document", "stylesheet", "image", "media", "font", "script", "texttrack", "xhr", "fetch", "eventsource", "websocket", "manifest", "other",
+]);
+function externalHostClass(parsed) {
+  if (parsed.protocol !== "https:") return "NON_HTTPS";
+  const host = parsed.hostname.toLowerCase();
+  if (isStreamDeliveryHost(host)) return "STREAM";
+  if (/(?:^|\.)(?:google|gstatic|googleapis|googletagmanager|google-analytics|doubleclick)\.[a-z.]+$/u.test(host)) return "GOOGLE";
+  if (/(?:^|\.)(?:cloudflare|cloudflarestream|videodelivery)\.(?:com|net)$/u.test(host)) return "CLOUDFLARE";
+  if (/(?:^|\.)sentry\.io$/u.test(host)) return "SENTRY";
+  if (/(?:^|\.)vercel\.(?:com|app)$/u.test(host)) return "VERCEL";
+  return "OTHER_HTTPS";
+}
+export function describeRequestClass({ url, method, resourceType }) {
+  const type = REQUEST_RESOURCE_TYPES.includes(resourceType) ? resourceType : "other";
   let parsed;
-  try { parsed = new URL(url); } catch { return { routeClass: "OTHER", hostClass: "OTHER" }; }
+  try { parsed = new URL(url); } catch { return { routeClass: "OTHER", hostClass: "OTHER", resourceType: type }; }
   const upper = String(method).toUpperCase();
   const host = parsed.hostname;
-  if (host === ALIAS) {
-    if (upper === "POST" && parsed.pathname === "/api/media/images/presign") return { routeClass: "POSTER_PRESIGN", hostClass: "APP" };
-    if (upper === "POST" && parsed.pathname === "/api/media/images/complete") return { routeClass: "POSTER_COMPLETE", hostClass: "APP" };
-    return { routeClass: "APP_OTHER", hostClass: "APP" };
+  if (parsed.protocol === "https:" && host === ALIAS) {
+    if (upper === "POST" && parsed.pathname === "/api/media/images/presign") return { routeClass: "POSTER_PRESIGN", hostClass: "APP", resourceType: type };
+    if (upper === "POST" && parsed.pathname === "/api/media/images/complete") return { routeClass: "POSTER_COMPLETE", hostClass: "APP", resourceType: type };
+    return { routeClass: "APP_OTHER", hostClass: "APP", resourceType: type };
   }
   if (host.endsWith(".r2.cloudflarestorage.com")) {
     const hostClass = R2_STAGING_UPLOAD_HOST.test(host) ? "R2_STAGING" : "R2_OTHER_BUCKET";
-    if (upper === "PUT") return { routeClass: "R2_PUT", hostClass };
-    if (upper === "OPTIONS") return { routeClass: "R2_PREFLIGHT", hostClass };
-    return { routeClass: "R2_OTHER", hostClass };
+    if (upper === "PUT") return { routeClass: "R2_PUT", hostClass, resourceType: type };
+    if (upper === "OPTIONS") return { routeClass: "R2_PREFLIGHT", hostClass, resourceType: type };
+    return { routeClass: "R2_OTHER", hostClass, resourceType: type };
   }
-  if (/^pub-[a-z0-9-]+\.r2\.dev$/u.test(host)) return { routeClass: "PUBLIC_IMAGE_READ", hostClass: "R2_PUBLIC_DEV" };
-  return { routeClass: "OTHER", hostClass: isStreamDeliveryHost(host) ? "STREAM" : "OTHER" };
+  if (/^pub-[a-z0-9-]+\.r2\.dev$/u.test(host)) return { routeClass: "PUBLIC_IMAGE_READ", hostClass: "R2_PUBLIC_DEV", resourceType: type };
+  return { routeClass: "OTHER", hostClass: externalHostClass(parsed), resourceType: type };
+}
+
+/**
+ * Why a request failed, from the browser's error text, as a fixed enum (never the text itself, which
+ * can carry a URL). A CORS refusal surfaces as ERR_FAILED, a CSP refusal as ERR_BLOCKED_BY_CSP.
+ */
+export function classifyFailureText(errorText) {
+  const text = typeof errorText === "string" ? errorText : "";
+  const known = [
+    "ERR_FAILED", "ERR_BLOCKED_BY_CSP", "ERR_BLOCKED_BY_CLIENT", "ERR_BLOCKED_BY_RESPONSE", "ERR_ABORTED",
+    "ERR_CONNECTION_RESET", "ERR_CONNECTION_REFUSED", "ERR_CONNECTION_CLOSED", "ERR_CONNECTION_TIMED_OUT", "ERR_TIMED_OUT",
+    "ERR_NAME_NOT_RESOLVED", "ERR_CERT", "ERR_SSL", "ERR_HTTP2", "ERR_QUIC", "ERR_INVALID_ARGUMENT", "ERR_UPLOAD_FILE_CHANGED",
+    "ERR_ACCESS_DENIED", "ERR_NETWORK_CHANGED", "ERR_INTERNET_DISCONNECTED", "ERR_TUNNEL_CONNECTION_FAILED", "ERR_PROXY",
+  ];
+  const match = known.find((name) => text.includes(name));
+  return match ?? (text === "" ? "NO_TEXT" : "OTHER");
+}
+
+/** A console message from the page, reduced to the one refusal kind it reports (or null). Never the text. */
+export function classifyConsoleRefusal(text) {
+  const value = typeof text === "string" ? text : "";
+  if (/blocked by CORS policy|No 'Access-Control-Allow-Origin'|CORS preflight/iu.test(value)) return "CORS";
+  if (/Content[- ]Security[- ]Policy|violates the following/iu.test(value)) return "CSP";
+  return null;
 }
 
 /** Bounded counter of what the policy blocked: `KIND|ROUTE|HOST` keys from fixed enums only. */
 export const BLOCKED_ROUTE_KEY_LIMIT = 16;
 export function countBlockedRoute(receipt, kind, request) {
-  const { routeClass, hostClass } = describeRequestClass(request);
-  const key = `${kind}|${routeClass}|${hostClass}`;
+  const { routeClass, hostClass, resourceType } = describeRequestClass(request);
+  const key = `${kind}|${routeClass}|${hostClass}|${resourceType}`;
   const counts = receipt.blockedByRoute;
   if (key in counts) counts[key] += 1;
   else if (Object.keys(counts).length < BLOCKED_ROUTE_KEY_LIMIT) counts[key] = 1;
   else counts["OVERFLOW"] = (counts["OVERFLOW"] ?? 0) + 1;
-  return { routeClass, hostClass };
+  return { routeClass, hostClass, resourceType };
 }
 
-/** Poster upload stages the receipt reports, each as NOT_SEEN, BLOCKED_BY_POLICY, FAILED or an HTTP status class. */
+/**
+ * Playwright never routes or reports a CORS preflight (verified locally against Chrome and Chromium:
+ * only the PUT reaches the route handler), so `preflight` stays NOT_SEEN; a refused preflight shows up
+ * as `put:FAILED` with `put_failure:ERR_FAILED` and a CORS count in the page console.
+ * Poster upload stages the receipt reports, each as NOT_SEEN, BLOCKED_BY_POLICY, FAILED or an HTTP status class. */
 export const POSTER_UPLOAD_STAGE_BY_ROUTE = Object.freeze({
   POSTER_PRESIGN: "presign", R2_PREFLIGHT: "preflight", R2_PUT: "put", POSTER_COMPLETE: "complete",
 });
@@ -784,7 +829,7 @@ export function createReceipt(env = {}) {
       posterUploaded: false, waitingVideoReused: false, waitingVideoUploaded: false, waitingVideoBound: false,
     },
     // Manual only: what the poster upload's four requests did, and what the field showed (fixed enums).
-    posterUpload: { presign: "NOT_SEEN", preflight: "NOT_SEEN", put: "NOT_SEEN", complete: "NOT_SEEN", alert: "NOT_CHECKED", fileSelected: "NOT_CHECKED" },
+    posterUpload: { presign: "NOT_SEEN", preflight: "NOT_SEEN", put: "NOT_SEEN", complete: "NOT_SEEN", alert: "NOT_CHECKED", fileSelected: "NOT_CHECKED", putFailure: "NONE", consoleRefusals: { CORS: 0, CSP: 0 } },
     viewer: {
       admissionOk: false, playbackSourceResponses: 0, tokenFormPlayback: false, uidFormStreamRequests: 0,
       tokenFormStreamRequests: 0, appUidFormStreamRequests: 0, providerUidFormStreamRequests: 0,
@@ -1088,7 +1133,7 @@ function formatBlockedLine(receipt) {
 
 function formatPosterUploadLine(receipt) {
   const upload = receipt.posterUpload ?? {};
-  return `stream_playback_poster_upload=presign:${upload.presign} preflight:${upload.preflight} put:${upload.put} complete:${upload.complete} alert:${upload.alert} file_selected:${upload.fileSelected}`;
+  return `stream_playback_poster_upload=presign:${upload.presign} preflight:${upload.preflight} put:${upload.put} complete:${upload.complete} alert:${upload.alert} file_selected:${upload.fileSelected} put_failure:${upload.putFailure} console_cors:${upload.consoleRefusals?.CORS ?? 0} console_csp:${upload.consoleRefusals?.CSP ?? 0}`;
 }
 
 /** Fixed route classes for the failure page; never the URL, id or slug. */

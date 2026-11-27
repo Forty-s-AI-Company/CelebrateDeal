@@ -11,7 +11,7 @@ import {
   describeErrorSample, formatRenewalErrorsLine, streamSegmentIdentity, summarizeStreamErrors,
   formatManualLine, parseManualHours, parseManualMode, parseManualStartsAt, manualLiveSchedule, videoFixtureFor,
   POSTER_FIXTURE, WAITING_LOOP_FIXTURE, MANUAL_STARTS_AT_MIN_LEAD_MINUTES,
-  countBlockedRoute, describeRequestClass, statusClass, BLOCKED_ROUTE_KEY_LIMIT,
+  classifyConsoleRefusal, classifyFailureText, countBlockedRoute, describeRequestClass, statusClass, BLOCKED_ROUTE_KEY_LIMIT,
   validUploadUrl, withCorruptedSignature, assessNewTokenUse, createTokenAttribution, playlistReferences, shouldRefuseInRecovery,
 } from "./staging-stream-playback-browser-core.mjs";
 import { describeFailure, probeAllowedOrigins, RECOVERY_CASES, runStreamPlaybackBrowser, safeReceiptText } from "./staging-stream-playback-browser.mjs";
@@ -1075,14 +1075,14 @@ test("diagnostics: a blocked poster request is reported by fixed route and host 
   const signed = (host) => `https://${host}/images/01234567-89ab-cdef-0123-456789abcdef.jpg?X-Amz-Signature=${"b".repeat(64)}`;
   const staging = signed(`celebrate-deal-staging.${acct}.r2.cloudflarestorage.com`);
   const production = signed(`celebrate-deal-production.${acct}.r2.cloudflarestorage.com`);
-  assert.deepEqual(describeRequestClass({ url: staging, method: "PUT" }), { routeClass: "R2_PUT", hostClass: "R2_STAGING" });
-  assert.deepEqual(describeRequestClass({ url: staging, method: "OPTIONS" }), { routeClass: "R2_PREFLIGHT", hostClass: "R2_STAGING" });
-  assert.deepEqual(describeRequestClass({ url: production, method: "PUT" }), { routeClass: "R2_PUT", hostClass: "R2_OTHER_BUCKET" });
-  assert.deepEqual(describeRequestClass({ url: `https://pub-abc123.r2.dev/images/x.jpg`, method: "GET" }), { routeClass: "PUBLIC_IMAGE_READ", hostClass: "R2_PUBLIC_DEV" });
-  assert.deepEqual(describeRequestClass({ url: `${ORIGIN}/api/media/images/presign`, method: "POST" }), { routeClass: "POSTER_PRESIGN", hostClass: "APP" });
-  assert.deepEqual(describeRequestClass({ url: `${ORIGIN}/api/media/images/complete`, method: "POST" }), { routeClass: "POSTER_COMPLETE", hostClass: "APP" });
-  assert.deepEqual(describeRequestClass({ url: "https://example.invalid/x", method: "GET" }), { routeClass: "OTHER", hostClass: "OTHER" });
-  assert.deepEqual(describeRequestClass({ url: "not a url", method: "GET" }), { routeClass: "OTHER", hostClass: "OTHER" });
+  assert.deepEqual(describeRequestClass({ url: staging, method: "PUT" }), { routeClass: "R2_PUT", hostClass: "R2_STAGING", resourceType: "other" });
+  assert.deepEqual(describeRequestClass({ url: staging, method: "OPTIONS" }), { routeClass: "R2_PREFLIGHT", hostClass: "R2_STAGING", resourceType: "other" });
+  assert.deepEqual(describeRequestClass({ url: production, method: "PUT" }), { routeClass: "R2_PUT", hostClass: "R2_OTHER_BUCKET", resourceType: "other" });
+  assert.deepEqual(describeRequestClass({ url: `https://pub-abc123.r2.dev/images/x.jpg`, method: "GET" }), { routeClass: "PUBLIC_IMAGE_READ", hostClass: "R2_PUBLIC_DEV", resourceType: "other" });
+  assert.deepEqual(describeRequestClass({ url: `${ORIGIN}/api/media/images/presign`, method: "POST" }), { routeClass: "POSTER_PRESIGN", hostClass: "APP", resourceType: "other" });
+  assert.deepEqual(describeRequestClass({ url: `${ORIGIN}/api/media/images/complete`, method: "POST" }), { routeClass: "POSTER_COMPLETE", hostClass: "APP", resourceType: "other" });
+  assert.deepEqual(describeRequestClass({ url: "https://example.invalid/x", method: "GET" }), { routeClass: "OTHER", hostClass: "OTHER_HTTPS", resourceType: "other" });
+  assert.deepEqual(describeRequestClass({ url: "not a url", method: "GET" }), { routeClass: "OTHER", hostClass: "OTHER", resourceType: "other" });
   // The production bucket is refused by the policy for the owner as well, and is told apart in the receipt.
   assert.equal(classifyRequest({ url: production, method: "PUT", postData: null }, "owner"), "EXTERNAL");
 
@@ -1090,10 +1090,10 @@ test("diagnostics: a blocked poster request is reported by fixed route and host 
   countBlockedRoute(receipt, "EXTERNAL", { url: production, method: "PUT" });
   countBlockedRoute(receipt, "EXTERNAL", { url: production, method: "PUT" });
   countBlockedRoute(receipt, "BLOCK", { url: `${ORIGIN}/api/media/images/presign`, method: "POST" });
-  assert.deepEqual(receipt.blockedByRoute, { "EXTERNAL|R2_PUT|R2_OTHER_BUCKET": 2, "BLOCK|POSTER_PRESIGN|APP": 1 });
+  assert.deepEqual(receipt.blockedByRoute, { "EXTERNAL|R2_PUT|R2_OTHER_BUCKET|other": 2, "BLOCK|POSTER_PRESIGN|APP|other": 1 });
   const lines = formatReceiptLines(receipt);
-  assert.match(lines, /stream_playback_blocked=writes:0 external:0 EXTERNAL\|R2_PUT\|R2_OTHER_BUCKET:2 BLOCK\|POSTER_PRESIGN\|APP:1/u);
-  assert.match(lines, /stream_playback_poster_upload=presign:NOT_SEEN preflight:NOT_SEEN put:NOT_SEEN complete:NOT_SEEN alert:NOT_CHECKED file_selected:NOT_CHECKED/u);
+  assert.match(lines, /stream_playback_blocked=writes:0 external:0 EXTERNAL\|R2_PUT\|R2_OTHER_BUCKET\|other:2 BLOCK\|POSTER_PRESIGN\|APP\|other:1/u);
+  assert.match(lines, /stream_playback_poster_upload=presign:NOT_SEEN preflight:NOT_SEEN put:NOT_SEEN complete:NOT_SEEN alert:NOT_CHECKED file_selected:NOT_CHECKED put_failure:NONE console_cors:0 console_csp:0/u);
   assert.equal(receiptLeaks(lines), false);
   assert.equal(receiptLeaks(JSON.stringify(receipt)), false);
   assert.equal(lines.includes("r2.cloudflarestorage"), false);
@@ -1112,4 +1112,25 @@ test("diagnostics: the blocked-route counter is bounded and status classes are f
   assert.deepEqual([200, 204, 403, 404, 503].map(statusClass), ["2XX", "2XX", "4XX", "4XX", "5XX"]);
   assert.equal(statusClass(0), "FAILED");
   assert.equal(statusClass(undefined), "FAILED");
+});
+
+test("diagnostics: external requests are told apart by fixed host class and resource type; failures by fixed error enum", () => {
+  const cls = (url, resourceType = "other") => describeRequestClass({ url, method: "GET", resourceType });
+  assert.deepEqual(cls("blob:https://x/abc", "image"), { routeClass: "OTHER", hostClass: "NON_HTTPS", resourceType: "image" });
+  assert.deepEqual(cls("data:image/png;base64,AAAA"), { routeClass: "OTHER", hostClass: "NON_HTTPS", resourceType: "other" });
+  assert.equal(cls("https://www.googletagmanager.com/gtag/js").hostClass, "GOOGLE");
+  assert.equal(cls("https://fonts.gstatic.com/s/a.woff2", "font").hostClass, "GOOGLE");
+  assert.equal(cls("https://challenges.cloudflare.com/turnstile/v0/api.js", "script").hostClass, "CLOUDFLARE");
+  assert.equal(cls("https://o1.ingest.sentry.io/api").hostClass, "SENTRY");
+  assert.equal(cls("https://example.invalid/x", "not-a-type").resourceType, "other");
+  assert.equal(describeRequestClass({ url: `http://${ALIAS}/x`, method: "GET" }).hostClass, "NON_HTTPS");
+  assert.equal(classifyFailureText("net::ERR_FAILED"), "ERR_FAILED");
+  assert.equal(classifyFailureText("net::ERR_BLOCKED_BY_CSP"), "ERR_BLOCKED_BY_CSP");
+  assert.equal(classifyFailureText("net::ERR_CONNECTION_RESET at https://secret.example/x?token=1"), "ERR_CONNECTION_RESET");
+  assert.equal(classifyFailureText("something https://secret.example/?a=1"), "OTHER");
+  assert.equal(classifyFailureText(undefined), "NO_TEXT");
+  assert.equal(classifyConsoleRefusal("Access to XMLHttpRequest at 'https://h/p?X-Amz-Signature=abc' from origin 'https://o' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header"), "CORS");
+  assert.equal(classifyConsoleRefusal("Refused to connect to 'https://h' because it violates the following Content Security Policy directive: \"connect-src 'self'\""), "CSP");
+  assert.equal(classifyConsoleRefusal("Failed to load resource: net::ERR_FAILED"), null);
+  assert.equal(classifyConsoleRefusal(undefined), null);
 });

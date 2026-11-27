@@ -11,7 +11,7 @@ import {
   finalVerdict, formatReceiptLines, isStreamDeliveryHost, receiptLeaks, renewalDelaySeconds,
   replayDeadline, replayDeadlineMinutes, routeCategory, safariCoverage, setStep, shouldRefuseInRecovery, skippedStepsFor,
   PAGE_ERROR_DETAIL_LIMIT, classifyRequestFailure, classifyVideoLock, postLockCoverage, describePageError, isBenignPageError, streamTokenSubject,
-  POSTER_UPLOAD_STAGE_BY_ROUTE, countBlockedRoute, describeRequestClass, statusClass,
+  POSTER_UPLOAD_STAGE_BY_ROUTE, classifyConsoleRefusal, classifyFailureText, countBlockedRoute, describeRequestClass, statusClass,
   describeErrorSample, streamRequestOrigin, streamSegmentIdentity, summarizeStreamErrors, tallyStreamRequest, taipeiDateTimeLocal, validUploadUrl, withCorruptedSignature,
 } from "./staging-stream-playback-browser-core.mjs";
 
@@ -367,7 +367,7 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
     if (kind === "ANALYTICS") { receipt.suppressedAnalytics += 1; return route.fulfill({ status: 204 }); }
     if (kind === "ATTRIBUTION_RESET") return route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
     // Fixed enums only (route class, host class): which kind of request the policy refused.
-    const blocked = countBlockedRoute(receipt, kind, { url: request.url(), method: request.method() });
+    const blocked = countBlockedRoute(receipt, kind, { url: request.url(), method: request.method(), resourceType: request.resourceType() });
     const blockedStage = POSTER_UPLOAD_STAGE_BY_ROUTE[blocked.routeClass];
     if (actor === "owner" && blockedStage) receipt.posterUpload[blockedStage] = "BLOCKED_BY_POLICY";
     if (kind === "EXTERNAL") receipt.blockedExternal += 1;
@@ -409,6 +409,13 @@ export async function runStreamPlaybackBrowser(env = process.env, dependencies =
     page.on("requestfailed", (request) => {
       const stage = posterStage(request);
       if (stage && receipt.posterUpload[stage] !== "BLOCKED_BY_POLICY") receipt.posterUpload[stage] = "FAILED";
+      if (stage === "put") receipt.posterUpload.putFailure = classifyFailureText(request.failure()?.errorText);
+    });
+    // CORS and CSP refusals are only reported in the page console; keep a count per kind, never the text.
+    page.on("console", (message) => {
+      if (actor !== "owner" || message.type() !== "error") return;
+      const refusal = classifyConsoleRefusal(message.text());
+      if (refusal) receipt.posterUpload.consoleRefusals[refusal] += 1;
     });
     page.on("dialog", (dialog) => { void dialog.dismiss().catch(() => {}); });
     activePage = page;
